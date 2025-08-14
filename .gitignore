@@ -1,0 +1,15 @@
+.claude/
+CLAUDE.md
+tests/
+.env
+package.json
+playwright.config.js
+
+
+apparc.md
+PLUGIN_OVERVIEW.md
+README_TESTS.md
+
+package-lock.json
+node_modules/
+test-results/
