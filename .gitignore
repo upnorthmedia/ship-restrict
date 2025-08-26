@@ -1,15 +1,36 @@
+# Development files
 .claude/
 CLAUDE.md
 tests/
 .env
 package.json
 playwright.config.js
+package-lock.json
+node_modules/
 
+# Playwright testing
+test-results/
+playwright-report/
+playwright/.cache/
+**/playwright-report/
+**/test-results/
+**/playwright/.cache/
 
+# Documentation files (development only)
 apparc.md
 PLUGIN_OVERVIEW.md
 README_TESTS.md
+*.md
 
-package-lock.json
-node_modules/
-test-results/
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# WordPress specific
+wp-config-local.php
