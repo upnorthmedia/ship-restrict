@@ -3,7 +3,7 @@
  * Plugin Name: Ship Restrict
  * Plugin URI: https://shiprestrict.com
  * Description: Restrict products and variations from being shipped to specific states, cities, or zip codes based on configurable rules.
- * Version: 1.1.0
+ * Version: 1.0.0
  * Author: UpNorth Media
  * Author URI: https://upnorthmedia.co
  * Text Domain: ship-restrict
@@ -44,7 +44,7 @@ class APSR_Pro {
      *
      * @var string
      */
-    const VERSION = '1.1.0';
+    const VERSION = '1.0.0';
 
     /**
      * Plugin singleton instance

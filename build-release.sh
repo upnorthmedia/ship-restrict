@@ -1,0 +1,184 @@
+#!/bin/bash
+
+# Ship Restrict WordPress Plugin Release Builder
+# Automatically creates a bundled version ready for WordPress upload
+
+set -e
+
+# Configuration
+PLUGIN_SLUG="ship-restrict"
+PLUGIN_FILE="ship-restrict.php"
+BUILD_DIR="build"
+README_FILE="readme.txt"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}🚀 Ship Restrict Release Builder${NC}"
+echo "=================================="
+
+# Check if plugin file exists
+if [ ! -f "$PLUGIN_FILE" ]; then
+    echo -e "${RED}❌ Error: $PLUGIN_FILE not found${NC}"
+    exit 1
+fi
+
+# Get current version from plugin file (macOS compatible)
+CURRENT_VERSION=$(grep "Version:" $PLUGIN_FILE | head -1 | sed 's/.*Version: *\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/')
+CURRENT_CLASS_VERSION=$(grep "const VERSION =" $PLUGIN_FILE | head -1 | sed "s/.*const VERSION = '\([0-9]*\.[0-9]*\.[0-9]*\)'.*/\1/")
+
+if [ -z "$CURRENT_VERSION" ]; then
+    echo -e "${RED}❌ Error: Could not extract current version from $PLUGIN_FILE${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}Current version: ${YELLOW}$CURRENT_VERSION${NC}"
+
+# Prompt for new version
+echo -e "\n${BLUE}Enter new version (current: $CURRENT_VERSION):${NC}"
+read -p "New version: " NEW_VERSION
+
+if [ -z "$NEW_VERSION" ]; then
+    echo -e "${RED}❌ Error: Version cannot be empty${NC}"
+    exit 1
+fi
+
+# Validate version format (x.y.z)
+if ! [[ $NEW_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo -e "${RED}❌ Error: Version must be in format x.y.z (e.g., 1.2.3)${NC}"
+    exit 1
+fi
+
+# Check if readme.txt exists
+if [ ! -f "$README_FILE" ]; then
+    echo -e "${RED}❌ Error: $README_FILE not found${NC}"
+    exit 1
+fi
+
+# Prompt for changelog entry
+echo -e "\n${BLUE}Enter changelog notes for version $NEW_VERSION:${NC}"
+echo -e "${YELLOW}(Enter each change on a new line, press Enter twice when done)${NC}"
+
+CHANGELOG_ENTRIES=()
+while IFS= read -r line; do
+    if [ -z "$line" ] && [ ${#CHANGELOG_ENTRIES[@]} -gt 0 ]; then
+        break
+    fi
+    if [ -n "$line" ]; then
+        CHANGELOG_ENTRIES+=("$line")
+    fi
+done
+
+if [ ${#CHANGELOG_ENTRIES[@]} -eq 0 ]; then
+    echo -e "${YELLOW}⚠️  Warning: No changelog entries provided${NC}"
+fi
+
+# Update readme.txt with new version and changelog
+if [ ${#CHANGELOG_ENTRIES[@]} -gt 0 ]; then
+    echo -e "${BLUE}📝 Updating readme.txt changelog${NC}"
+    
+    # Create temp file
+    TEMP_README=$(mktemp)
+    
+    # Build the new changelog entry
+    NEW_ENTRY="= $NEW_VERSION =\n"
+    for entry in "${CHANGELOG_ENTRIES[@]}"; do
+        NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+    done
+    NEW_ENTRY="${NEW_ENTRY}\n"
+    
+    # Insert new changelog entry after "== Changelog ==" line
+    awk -v new_entry="$NEW_ENTRY" '
+    /^== Changelog ==/ {
+        print
+        printf "%s", new_entry
+        next
+    }
+    { print }
+    ' $README_FILE > $TEMP_README
+    
+    mv $TEMP_README $README_FILE
+fi
+
+# Update version in plugin file
+echo -e "${BLUE}🔄 Updating version in $PLUGIN_FILE${NC}"
+
+# Create backup
+cp $PLUGIN_FILE "${PLUGIN_FILE}.backup"
+
+# Update plugin header version
+sed -i.tmp "s/Version: $CURRENT_VERSION/Version: $NEW_VERSION/" $PLUGIN_FILE
+
+# Update class constant version
+sed -i.tmp "s/const VERSION = '$CURRENT_CLASS_VERSION'/const VERSION = '$NEW_VERSION'/" $PLUGIN_FILE
+
+# Remove temp file
+rm "${PLUGIN_FILE}.tmp"
+
+# Update Stable tag in readme.txt
+echo -e "${BLUE}🔄 Updating Stable tag in readme.txt${NC}"
+sed -i.tmp "s/Stable tag: $CURRENT_VERSION/Stable tag: $NEW_VERSION/" $README_FILE
+rm "${README_FILE}.tmp"
+
+# Create build directory
+echo -e "${BLUE}📁 Creating build directory${NC}"
+rm -rf $BUILD_DIR
+mkdir -p $BUILD_DIR
+
+# Create plugin directory in build
+PLUGIN_BUILD_DIR="$BUILD_DIR/$PLUGIN_SLUG"
+mkdir -p $PLUGIN_BUILD_DIR
+
+# Copy plugin files
+echo -e "${BLUE}📦 Copying plugin files${NC}"
+cp $PLUGIN_FILE $PLUGIN_BUILD_DIR/
+cp $README_FILE $PLUGIN_BUILD_DIR/
+
+# Copy any additional assets if they exist
+if [ -d "assets" ]; then
+    cp -r assets $PLUGIN_BUILD_DIR/
+    echo -e "${BLUE}📁 Copied assets directory${NC}"
+fi
+
+# Copy license file if it exists
+if [ -f "LICENSE" ] || [ -f "LICENSE.txt" ]; then
+    cp LICENSE* $PLUGIN_BUILD_DIR/ 2>/dev/null || true
+    echo -e "${BLUE}📄 Copied license file${NC}"
+fi
+
+# Create ZIP file
+echo -e "${BLUE}🗜️  Creating ZIP file${NC}"
+cd $BUILD_DIR
+ZIP_FILE="${PLUGIN_SLUG}-${NEW_VERSION}.zip"
+zip -r $ZIP_FILE $PLUGIN_SLUG/
+cd ..
+
+# Calculate file size
+FILE_SIZE=$(ls -lh "$BUILD_DIR/$ZIP_FILE" | awk '{print $5}')
+
+echo -e "\n${GREEN}✅ Release build completed!${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}Version:${NC} $CURRENT_VERSION → $NEW_VERSION"
+echo -e "${BLUE}ZIP file:${NC} $BUILD_DIR/$ZIP_FILE"
+echo -e "${BLUE}Size:${NC} $FILE_SIZE"
+echo -e "${BLUE}Ready for WordPress upload!${NC}"
+
+# Offer to restore backup if something went wrong
+echo -e "\n${YELLOW}Backup created at: ${PLUGIN_FILE}.backup${NC}"
+echo -e "${YELLOW}Run 'mv ${PLUGIN_FILE}.backup ${PLUGIN_FILE}' to restore if needed${NC}"
+
+# Show next steps
+echo -e "\n${BLUE}Next Steps:${NC}"
+echo -e "1. Test the plugin with the new version"
+echo -e "2. Upload $BUILD_DIR/$ZIP_FILE to WordPress.org"
+echo -e "3. Commit changes to git: git add . && git commit -m 'Release v$NEW_VERSION'"
+echo -e "4. Create git tag: git tag v$NEW_VERSION && git push origin v$NEW_VERSION"
+echo -e "5. Remove backup: rm ${PLUGIN_FILE}.backup"
+echo -e "\n${BLUE}WordPress.org Release Process:${NC}"
+echo -e "• The 'Stable tag' in readme.txt determines the current release"
+echo -e "• Changelog entries help users understand what changed"
+echo -e "• Test thoroughly before releasing to avoid user issues"
