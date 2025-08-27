@@ -3,11 +3,10 @@
  * Plugin Name: Ship Restrict
  * Plugin URI: https://shiprestrict.com
  * Description: Restrict products and variations from being shipped to specific states, cities, or zip codes based on configurable rules.
- * Version: 1.1.0
+ * Version: 1.1.5
  * Author: UpNorth Media
  * Author URI: https://upnorthmedia.co
  * Text Domain: ship-restrict
- * Domain Path: /languages
  * License: GPLv2 or later
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -44,7 +43,7 @@ class APSR_Pro {
      *
      * @var string
      */
-    const VERSION = '1.1.0';
+    const VERSION = '1.1.5';
 
     /**
      * Plugin singleton instance
@@ -170,9 +169,19 @@ class APSR_Pro {
         $notice = '';
         $notice_type = '';
 
+        // Handle save message
+        if (isset($_POST['spsr_save_message']) && check_admin_referer('spsr_save_message_action', 'spsr_save_message_nonce')) {
+            $new_message = isset($_POST['spsr_settings']['message']) ? sanitize_textarea_field(wp_unslash($_POST['spsr_settings']['message'])) : '';
+            $settings['message'] = $new_message;
+            update_option('spsr_settings', $settings);
+            $message = $new_message;
+            $notice = __('Error message saved successfully.', 'ship-restrict');
+            $notice_type = 'success';
+        }
+
         // Handle add rule
         if (isset($_POST['spsr_add_rule']) && check_admin_referer('spsr_add_rule_action', 'spsr_add_rule_nonce')) {
-            $rule_name = sanitize_text_field($_POST['spsr_rule_name'] ?? '');
+            $rule_name = sanitize_text_field(wp_unslash($_POST['spsr_rule_name'] ?? ''));
             $rule_term = intval($_POST['spsr_rule_term'] ?? 0);
             
             // Auto-detect rule type based on selected term
@@ -187,17 +196,23 @@ class APSR_Pro {
                     }
                 }
             }
-            $rule_logic = in_array($_POST['spsr_rule_logic'] ?? 'block_from', array('block_from', 'allow_only'), true) ? $_POST['spsr_rule_logic'] : 'block_from';
-            $rule_states = isset($_POST['spsr_rule_states']) && is_array($_POST['spsr_rule_states']) ? array_map('sanitize_text_field', $_POST['spsr_rule_states']) : array();
+            $rule_logic_input = sanitize_text_field(wp_unslash($_POST['spsr_rule_logic'] ?? 'block_from'));
+            $rule_logic = in_array($rule_logic_input, array('block_from', 'allow_only'), true) ? $rule_logic_input : 'block_from';
+            $rule_states = isset($_POST['spsr_rule_states']) && is_array($_POST['spsr_rule_states']) ? array_map('sanitize_text_field', wp_unslash($_POST['spsr_rule_states'])) : array();
             
             // Handle state-city pairs
             $rule_state_cities = array();
             if (isset($_POST['spsr_state_cities']) && is_array($_POST['spsr_state_cities'])) {
-                foreach ($_POST['spsr_state_cities'] as $pair) {
-                    if (isset($pair['state'], $pair['city']) && !empty($pair['state']) && !empty($pair['city'])) {
+                // Use wp_unslash() first, then map_deep() for proper sanitization of nested arrays
+                $state_cities_input = map_deep(wp_unslash($_POST['spsr_state_cities']), 'sanitize_text_field');
+                
+                // Validate structure and filter out empty values
+                foreach ($state_cities_input as $pair) {
+                    if (is_array($pair) && isset($pair['state'], $pair['city']) && 
+                        !empty($pair['state']) && !empty($pair['city'])) {
                         $rule_state_cities[] = array(
-                            'state' => sanitize_text_field($pair['state']),
-                            'city' => sanitize_text_field($pair['city'])
+                            'state' => $pair['state'],
+                            'city' => $pair['city']
                         );
                     }
                 }
@@ -205,7 +220,7 @@ class APSR_Pro {
             
             // Legacy cities removed - only use state-city pairs now
             $rule_cities = array(); // Keep empty for backward compatibility with existing data
-            $rule_zip_codes = array_filter(array_map('trim', explode(',', $_POST['spsr_rule_zip_codes'] ?? '')));
+            $rule_zip_codes = array_filter(array_map('trim', explode(',', sanitize_textarea_field(wp_unslash($_POST['spsr_rule_zip_codes'] ?? '')))));
             
             if ($rule_name && $rule_type && $rule_term) {
                 $rules[] = array(
@@ -245,7 +260,7 @@ class APSR_Pro {
 
         // License key form handling
         if (isset($_POST['spsr_save_license']) && check_admin_referer('spsr_save_license_action', 'spsr_save_license_nonce')) {
-            $new_license_key = sanitize_text_field($_POST['spsr_license_key']);
+            $new_license_key = isset($_POST['spsr_license_key']) ? sanitize_text_field(wp_unslash($_POST['spsr_license_key'])) : '';
             $activate = ($new_license_key !== $license_key || !$license_valid);
             $result = $this->keyforge_validate_license($new_license_key, $activate);
             $settings['license_key'] = $new_license_key;
@@ -305,29 +320,6 @@ class APSR_Pro {
                 echo '</div>';
             }
             ?>
-            <form method="post" action="options.php">
-                <?php settings_fields('spsr_settings'); ?>
-                <table class="form-table">
-                    <tr valign="top">
-                        <th scope="row"><?php echo esc_html__('Error Message', 'ship-restrict'); ?></th>
-                        <td>
-                            <textarea name="spsr_settings[message]" rows="5" class="large-text"><?php echo esc_textarea($message); ?></textarea>
-                            <p class="description"><?php echo esc_html__('Customize the message shown when a restricted product is in the cart. Use {product} to insert the product name. Leave blank for default.', 'ship-restrict'); ?></p>
-                            <div style="margin-top: 10px; padding: 10px; border: 1px solid #ccd0d4; background-color: #f6f7f7;">
-                                <strong><?php echo esc_html__('Example Notice (Default Format):', 'ship-restrict'); ?></strong><br>
-                                <?php echo esc_html__('Some items in your cart cannot currently be shipped to your location:', 'ship-restrict'); ?>
-                                <ul>
-                                    <li><?php 
-                                        $default_template = __('The {product} cannot currently be shipped to your location. Please remove from cart to continue.', 'ship-restrict');
-                                        echo esc_html(str_replace('{product}', __('Example Product Name', 'ship-restrict'), $default_template)); 
-                                    ?></li>
-                                </ul>
-                            </div>
-                        </td>
-                    </tr>
-                </table>
-                <?php submit_button(); ?>
-            </form>
 
             <hr />
             <h2><?php echo esc_html__('Restriction Rules', 'ship-restrict'); ?></h2>
@@ -503,6 +495,22 @@ class APSR_Pro {
                 </table>
                 <p><input type="submit" name="spsr_save_license" class="button button-primary" value="<?php echo esc_attr__('Save License', 'ship-restrict'); ?>" /></p>
             </form>
+
+            <hr />
+            <h2><?php echo esc_html__('Error Message', 'ship-restrict'); ?></h2>
+            <form method="post">
+                <?php wp_nonce_field('spsr_save_message_action', 'spsr_save_message_nonce'); ?>
+                <table class="form-table">
+                    <tr valign="top">
+                        <th scope="row"><?php echo esc_html__('Custom Message', 'ship-restrict'); ?></th>
+                        <td>
+                            <textarea name="spsr_settings[message]" rows="3" class="large-text" placeholder="<?php esc_attr_e('The {product} cannot currently be shipped to your location. Please remove from cart to continue.', 'ship-restrict'); ?>"><?php echo esc_textarea($message); ?></textarea>
+                            <p class="description"><?php echo esc_html__('Optional: Customize the restriction message. Use {product} for product name.', 'ship-restrict'); ?></p>
+                        </td>
+                    </tr>
+                </table>
+                <p><input type="submit" name="spsr_save_message" class="button button-primary" value="<?php esc_attr_e('Save Message', 'ship-restrict'); ?>" /></p>
+            </form>
         </div>
         
         <script type="text/javascript">
@@ -598,54 +606,6 @@ class APSR_Pro {
         <?php
     }
 
-    /**
-     * Sanitize settings
-     *
-     * @param array $input Settings input.
-     * @return array
-     */
-    public function sanitize_settings($input) {
-        $sanitized = array();
-        if (isset($input['message'])) {
-            $sanitized['message'] = sanitize_textarea_field($input['message']);
-        }
-        if (isset($input['rules']) && is_array($input['rules'])) {
-            $sanitized['rules'] = array();
-            foreach ($input['rules'] as $rule) {
-                $name = isset($rule['name']) ? sanitize_text_field($rule['name']) : '';
-                $term_id = isset($rule['term_id']) ? intval($rule['term_id']) : 0;
-                
-                // Auto-detect type from term
-                $type = '';
-                if ($term_id) {
-                    $term = get_term($term_id);
-                    if ($term && !is_wp_error($term)) {
-                        if ($term->taxonomy === 'product_cat') {
-                            $type = 'category';
-                        } elseif ($term->taxonomy === 'product_tag') {
-                            $type = 'tag';
-                        }
-                    }
-                }
-                $states = isset($rule['states']) && is_array($rule['states']) ? array_map('sanitize_text_field', $rule['states']) : array();
-                $cities = isset($rule['cities']) && is_array($rule['cities']) ? array_map('sanitize_text_field', $rule['cities']) : array();
-                $zip_codes = isset($rule['zip_codes']) && is_array($rule['zip_codes']) ? array_map('sanitize_text_field', $rule['zip_codes']) : array();
-                if ($name && $type && $term_id) {
-                    $sanitized['rules'][] = array(
-                        'name' => $name,
-                        'type' => $type,
-                        'term_id' => $term_id,
-                        'logic' => isset($rule['logic']) && in_array($rule['logic'], array('block_from', 'allow_only'), true) ? $rule['logic'] : 'block_from',
-                        'states' => $states,
-                        'state_cities' => isset($rule['state_cities']) && is_array($rule['state_cities']) ? $rule['state_cities'] : array(),
-                        'cities' => $cities,
-                        'zip_codes' => $zip_codes,
-                    );
-                }
-            }
-        }
-        return $sanitized;
-    }
 
     /**
      * Add product options
@@ -663,7 +623,7 @@ class APSR_Pro {
         echo '<select id="_restricted_states" name="_restricted_states[]" multiple size="6" style="width:100%;max-width:400px;">';
         foreach ($us_states as $code => $label) {
             $selected = in_array($code, $selected_states, true) ? 'selected' : '';
-            echo '<option value="' . esc_attr($code) . '" ' . $selected . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
+            echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
         }
         echo '</select>';
         echo '<p class="description">' . esc_html__('Select one or more states where this product cannot be shipped.', 'ship-restrict') . '</p>';
@@ -694,9 +654,20 @@ class APSR_Pro {
      * @param int $post_id Product ID.
      */
     public function save_product_options($post_id) {
+        // Check user capabilities
+        if (!current_user_can('edit_post', $post_id)) {
+            return;
+        }
+        
+        // Verify nonce for product edit (WordPress standard)
+        $nonce = sanitize_text_field(wp_unslash($_POST['_wpnonce'] ?? ''));
+        if (!wp_verify_nonce($nonce, 'update-post_' . $post_id)) {
+            return;
+        }
+        
         // Save states as array
         if (isset($_POST['_restricted_states']) && is_array($_POST['_restricted_states'])) {
-            $states = array_map('sanitize_text_field', $_POST['_restricted_states']);
+            $states = array_map('sanitize_text_field', wp_unslash($_POST['_restricted_states']));
             update_post_meta($post_id, '_restricted_states', $states);
         } else {
             delete_post_meta($post_id, '_restricted_states');
@@ -729,7 +700,7 @@ class APSR_Pro {
         echo '<select id="_restricted_states_' . esc_attr($variation->ID) . '" name="_restricted_states[' . esc_attr($variation->ID) . '][]" multiple size="6" style="width:100%;max-width:400px;">';
         foreach ($us_states as $code => $label) {
             $selected = in_array($code, $selected_states, true) ? 'selected' : '';
-            echo '<option value="' . esc_attr($code) . '" ' . $selected . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
+            echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
         }
         echo '</select>';
         echo '<p class="description">' . esc_html__('Select one or more states where this variation cannot be shipped.', 'ship-restrict') . '</p>';
@@ -766,9 +737,23 @@ class APSR_Pro {
      * @param int $i            Position in the loop.
      */
     public function save_variation_options($variation_id, $i) {
+        // Check user capabilities
+        if (!current_user_can('edit_post', $variation_id)) {
+            return;
+        }
+        
+        // Get parent product ID for nonce verification
+        $parent_id = wp_get_post_parent_id($variation_id);
+        if ($parent_id) {
+            $nonce = sanitize_text_field(wp_unslash($_POST['_wpnonce'] ?? ''));
+            if (!wp_verify_nonce($nonce, 'update-post_' . $parent_id)) {
+                return;
+            }
+        }
+        
         // Save states as array
         if (isset($_POST['_restricted_states'][$variation_id]) && is_array($_POST['_restricted_states'][$variation_id])) {
-            $states = array_map('sanitize_text_field', $_POST['_restricted_states'][$variation_id]);
+            $states = array_map('sanitize_text_field', wp_unslash($_POST['_restricted_states'][$variation_id]));
             update_post_meta($variation_id, '_restricted_states', $states);
         } else {
             delete_post_meta($variation_id, '_restricted_states');
@@ -830,6 +815,7 @@ class APSR_Pro {
                     }
                     if (in_array($shipping_state, $variation_restricted_states, true)) {
                         $is_restricted = true;
+                        /* translators: %1$s: State code (e.g., CA, NY) */
                         $restriction_reason = sprintf(__('State restriction (%1$s)', 'ship-restrict'), $shipping_state);
                     }
                 }
@@ -838,6 +824,7 @@ class APSR_Pro {
                     $restricted_cities = array_map('trim', explode(',', strtolower($variation_restricted_cities)));
                     if (in_array(strtolower($shipping_city), $restricted_cities, true)) {
                         $is_restricted = true;
+                        /* translators: %1$s: City name */
                         $restriction_reason = sprintf(__('City restriction (%1$s)', 'ship-restrict'), $shipping_city);
                     }
                 }
@@ -846,6 +833,7 @@ class APSR_Pro {
                     $restricted_zip_codes = array_map('trim', explode(',', $variation_restricted_zip_codes));
                     if (in_array($shipping_postcode, $restricted_zip_codes, true)) {
                         $is_restricted = true;
+                        /* translators: %1$s: ZIP/postal code */
                         $restriction_reason = sprintf(__('ZIP code restriction (%1$s)', 'ship-restrict'), $shipping_postcode);
                     }
                 }
@@ -860,6 +848,7 @@ class APSR_Pro {
                     }
                     if (in_array($shipping_state, $product_restricted_states, true)) {
                         $is_restricted = true;
+                        /* translators: %1$s: State code (e.g., CA, NY) */
                         $restriction_reason = sprintf(__('State restriction (%1$s)', 'ship-restrict'), $shipping_state);
                     }
                 }
@@ -870,6 +859,7 @@ class APSR_Pro {
                     $restricted_cities = array_map('trim', explode(',', strtolower($product_restricted_cities)));
                     if (in_array(strtolower($shipping_city), $restricted_cities, true)) {
                         $is_restricted = true;
+                        /* translators: %1$s: City name */
                         $restriction_reason = sprintf(__('City restriction (%1$s)', 'ship-restrict'), $shipping_city);
                     }
                 }
@@ -880,6 +870,7 @@ class APSR_Pro {
                     $restricted_zip_codes = array_map('trim', explode(',', $product_restricted_zip_codes));
                     if (in_array($shipping_postcode, $restricted_zip_codes, true)) {
                         $is_restricted = true;
+                        /* translators: %1$s: ZIP/postal code */
                         $restriction_reason = sprintf(__('ZIP code restriction (%1$s)', 'ship-restrict'), $shipping_postcode);
                     }
                 }
@@ -917,6 +908,7 @@ class APSR_Pro {
                             // Check states
                             if (!empty($rule['states']) && in_array($shipping_state, $rule['states'], true)) {
                                 $location_matches_rule = true;
+                                /* translators: 1: State code (e.g., CA, NY), 2: Rule name */
                                 $restriction_type = sprintf(__('State restriction (%1$s) via rule: %2$s', 'ship-restrict'), $shipping_state, isset($rule['name']) ? $rule['name'] : '');
                                 $this->log(sprintf('State matches rule: %s', $restriction_type), 'info');
                             }
@@ -928,6 +920,7 @@ class APSR_Pro {
                                         $pair['state'] === $shipping_state && 
                                         strtolower($pair['city']) === strtolower($shipping_city)) {
                                         $location_matches_rule = true;
+                                        /* translators: 1: City name, 2: State code (e.g., CA, NY), 3: Rule name */
                                         $restriction_type = sprintf(__('City restriction (%1$s, %2$s) via rule: %3$s', 'ship-restrict'), $shipping_city, $shipping_state, isset($rule['name']) ? $rule['name'] : '');
                                         $this->log(sprintf('State-city pair matches rule: %s', $restriction_type), 'info');
                                         break;
@@ -940,6 +933,7 @@ class APSR_Pro {
                                 $cities = array_map('strtolower', array_map('trim', $rule['cities']));
                                 if (in_array(strtolower($shipping_city), $cities, true)) {
                                     $location_matches_rule = true;
+                                    /* translators: 1: City name, 2: Rule name */
                                     $restriction_type = sprintf(__('City restriction (%1$s) via rule: %2$s', 'ship-restrict'), $shipping_city, isset($rule['name']) ? $rule['name'] : '');
                                     $this->log(sprintf('Legacy city matches rule: %s', $restriction_type), 'info');
                                 }
@@ -950,6 +944,7 @@ class APSR_Pro {
                                 $zip_codes = array_map('trim', $rule['zip_codes']);
                                 if (in_array($shipping_postcode, $zip_codes, true)) {
                                     $location_matches_rule = true;
+                                    /* translators: 1: ZIP/postal code, 2: Rule name */
                                     $restriction_type = sprintf(__('ZIP code restriction (%1$s) via rule: %2$s', 'ship-restrict'), $shipping_postcode, isset($rule['name']) ? $rule['name'] : '');
                                     $this->log(sprintf('ZIP code matches rule: %s', $restriction_type), 'info');
                                 }
@@ -971,6 +966,7 @@ class APSR_Pro {
                                 if ($rule_logic === 'allow_only') {
                                     // Allow only: restrict if location doesn't match
                                     $is_restricted = true;
+                                    /* translators: %1$s: Rule name */
                                     $restriction_reason = sprintf(__('Location not in allowed list for rule: %1$s', 'ship-restrict'), isset($rule['name']) ? $rule['name'] : '');
                                     $this->log(sprintf('RESTRICTION TRIGGERED (Allow Only): %s', $restriction_reason), 'warning');
                                     break;

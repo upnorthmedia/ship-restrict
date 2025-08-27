@@ -2,11 +2,13 @@
 Contributors: upnorthmedia
 Tags: woocommerce, shipping, restrictions, products, pro
 Requires at least: 5.6
-Tested up to: 6.5
+Tested up to: 6.8
 Requires PHP: 7.2
-Stable tag: 1.1.0
+Stable tag: 1.1.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
+
+Restrict products and variations from being shipped to specific states, cities, or zip codes based on configurable rules.
 
 == Description ==
 Restrict products and variations from being shipped to specific states, cities, or zip codes based on configurable rules. Designed for WooCommerce stores needing advanced shipping restrictions by product, category, or tag.
@@ -17,6 +19,10 @@ Restrict products and variations from being shipped to specific states, cities, 
 3. Configure shipping restriction rules under WooCommerce > Ship Restrict.
 
 == Changelog ==
+= 1.1.5 =
+* Updated code to match WP best practices
+* Optimized array data for security and performance
+
 = 1.1.0 =
 * Updated Rule Builder 
 * Implemented Updated WooCommerce API Calls for Cart Validation
