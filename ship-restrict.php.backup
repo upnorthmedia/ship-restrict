@@ -3,7 +3,7 @@
  * Plugin Name: Ship Restrict
  * Plugin URI: https://shiprestrict.com
  * Description: Restrict products from shipping to specific US locations. Free: 2 rules & 2 products. Pro: Unlimited restrictions with license key.
- * Version: 1.1.5
+ * Version: 1.2.0
  * Author: UpNorth Media
  * Author URI: https://upnorthmedia.co
  * Text Domain: ship-restrict
@@ -43,7 +43,7 @@ class APSR_Pro {
      *
      * @var string
      */
-    const VERSION = '1.1.5';
+    const VERSION = '1.2.0';
 
     /**
      * Plugin singleton instance
@@ -708,7 +708,8 @@ class APSR_Pro {
                         <th scope="row"><?php echo esc_html__('License Key', 'ship-restrict'); ?></th>
                         <td>
                             <input type="text" name="spsr_license_key" class="regular-text" value="<?php echo esc_attr($license_key); ?>" style="width:350px;" />
-                            <p class="description"><?php echo esc_html__('Enter your Ship Restrict license key. One key per WooCommerce site.', 'ship-restrict'); ?></p>
+                            <p class="description"><?php echo esc_html__('Enter your Ship Restrict Pro license key. One key per WooCommerce site.', 'ship-restrict'); ?></p>
+                            <p class="description" style="margin-top:5px;"><small><?php echo esc_html__('Privacy Notice: When activating a Pro license, your site URL and a unique device identifier will be sent to KeyForge (keyforge.dev) for license validation only. No customer data is collected or transmitted.', 'ship-restrict'); ?></small></p>
                         </td>
                     </tr>
                 </table>
