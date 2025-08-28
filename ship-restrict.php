@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Ship Restrict
  * Plugin URI: https://shiprestrict.com
- * Description: Restrict products and variations from being shipped to specific states, cities, or zip codes based on configurable rules.
+ * Description: Restrict products from shipping to specific US locations. Free: 2 rules & 2 products. Pro: Unlimited restrictions with license key.
  * Version: 1.1.5
  * Author: UpNorth Media
  * Author URI: https://upnorthmedia.co
@@ -76,6 +76,137 @@ class APSR_Pro {
     }
 
     /**
+     * Check if Pro license is active
+     * @return bool
+     */
+    private function is_pro_active() {
+        $settings = get_option('spsr_settings', array());
+        $license_valid = isset($settings['license_valid']) ? (bool)$settings['license_valid'] : false;
+        return $license_valid;
+    }
+
+    /**
+     * Get rule limit based on license status
+     * @return int
+     */
+    private function get_rule_limit() {
+        return $this->is_pro_active() ? PHP_INT_MAX : 2;
+    }
+
+    /**
+     * Get product restriction limit based on license status
+     * @return int
+     */
+    private function get_product_limit() {
+        return $this->is_pro_active() ? PHP_INT_MAX : 2;
+    }
+
+    /**
+     * Count products with restrictions
+     * @return int
+     */
+    private function count_restricted_products() {
+        global $wpdb;
+        
+        // Get all product IDs that have actual restriction data (not empty values)
+        $product_ids = array();
+        
+        // Check for products with state restrictions
+        $cache_key = 'spsr_states_products_' . md5('states_query');
+        $states_products = wp_cache_get($cache_key, 'spsr');
+        
+        if (false === $states_products) {
+            // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+            $states_products = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT post_id FROM {$wpdb->postmeta} 
+                    WHERE meta_key = '_restricted_states' 
+                    AND meta_value != '' 
+                    AND meta_value != %s 
+                    AND post_id IN (SELECT ID FROM {$wpdb->posts} WHERE post_type = 'product' AND post_status = 'publish')",
+                    serialize(array())
+                )
+            );
+            // phpcs:enable
+            wp_cache_set($cache_key, $states_products, 'spsr', 3600);
+        }
+        
+        // Check for products with city restrictions (both new and legacy)
+        $cache_key = 'spsr_cities_products_' . md5('cities_query');
+        $cities_products = wp_cache_get($cache_key, 'spsr');
+        
+        if (false === $cities_products) {
+            // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+            $cities_products = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT post_id FROM {$wpdb->postmeta} 
+                    WHERE (meta_key = '_restricted_cities' OR meta_key = '_restricted_state_cities') 
+                    AND meta_value != '' 
+                    AND meta_value != %s 
+                    AND post_id IN (SELECT ID FROM {$wpdb->posts} WHERE post_type = 'product' AND post_status = 'publish')",
+                    serialize(array())
+                )
+            );
+            // phpcs:enable
+            wp_cache_set($cache_key, $cities_products, 'spsr', 3600);
+        }
+        
+        // Check for products with ZIP restrictions
+        $cache_key = 'spsr_zip_products_' . md5('zip_query');
+        $zip_products = wp_cache_get($cache_key, 'spsr');
+        
+        if (false === $zip_products) {
+            // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+            $zip_products = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT post_id FROM {$wpdb->postmeta} 
+                    WHERE meta_key = %s 
+                    AND meta_value != %s 
+                    AND post_id IN (SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = %s)",
+                    '_restricted_zip_codes',
+                    '',
+                    'product',
+                    'publish'
+                )
+            );
+            // phpcs:enable
+            wp_cache_set($cache_key, $zip_products, 'spsr', 3600);
+        }
+        
+        // Merge all unique product IDs
+        $product_ids = array_unique(array_merge(
+            $states_products ?: array(),
+            $cities_products ?: array(),
+            $zip_products ?: array()
+        ));
+        
+        return count($product_ids);
+    }
+
+    /**
+     * Show upgrade prompt
+     * @param string $context 'rules' or 'products'
+     */
+    private function show_upgrade_prompt($context = 'rules') {
+        if ($this->is_pro_active()) return '';
+        
+        $messages = array(
+            'rules' => sprintf(
+                /* translators: %s: URL to pricing page */
+                __('You\'ve reached the maximum of 2 restriction rules in the free version. <a href="%s" target="_blank">Upgrade to Pro</a> for unlimited rules.', 'ship-restrict'),
+                'https://shiprestrict.com/#pricing'
+            ),
+            'products' => sprintf(
+                /* translators: %s: URL to pricing page */
+                __('You\'ve reached the maximum of 2 product restrictions in the free version. <a href="%s" target="_blank">Upgrade to Pro</a> for unlimited product restrictions.', 'ship-restrict'),
+                'https://shiprestrict.com/#pricing'
+            )
+        );
+        
+        return '<div class="notice notice-info inline"><p>' . $messages[$context] . '</p></div>';
+    }
+
+    /**
      * Define plugin constants
      */
     private function define_constants() {
@@ -110,6 +241,13 @@ class APSR_Pro {
             add_action('woocommerce_process_product_meta', array($this, 'save_product_options'));
             add_action('woocommerce_product_after_variable_attributes', array($this, 'variation_options'), 10, 3);
             add_action('woocommerce_save_product_variation', array($this, 'save_variation_options'), 10, 2);
+            
+            // Clear cache when products are updated
+            add_action('woocommerce_process_product_meta', array($this, 'clear_product_cache'));
+            add_action('woocommerce_save_product_variation', array($this, 'clear_product_cache'));
+            add_action('deleted_post_meta', array($this, 'clear_product_cache_on_meta_change'), 10, 4);
+            add_action('updated_post_meta', array($this, 'clear_product_cache_on_meta_change'), 10, 4);
+            add_action('added_post_meta', array($this, 'clear_product_cache_on_meta_change'), 10, 4);
         }
         
         // Frontend validation hooks
@@ -161,7 +299,14 @@ class APSR_Pro {
         $license_key = isset($settings['license_key']) ? $settings['license_key'] : '';
         $license_valid = isset($settings['license_valid']) ? (bool)$settings['license_valid'] : false;
         $license_last_checked = isset($settings['license_last_checked']) ? intval($settings['license_last_checked']) : 0;
+        // Clear error if no license key is set
         $license_error = isset($settings['license_error']) ? $settings['license_error'] : '';
+        if (empty($license_key) && !empty($license_error)) {
+            // Clear stored error when there's no license key
+            $settings['license_error'] = '';
+            update_option('spsr_settings', $settings);
+            $license_error = '';
+        }
         $now = time();
         $cache_valid = $license_valid && ($now - $license_last_checked < SPSR_CACHE_DURATION);
         $product_id = defined('SPSR_KEYFORGE_PRODUCT_ID') ? SPSR_KEYFORGE_PRODUCT_ID : '';
@@ -181,6 +326,11 @@ class APSR_Pro {
 
         // Handle add rule
         if (isset($_POST['spsr_add_rule']) && check_admin_referer('spsr_add_rule_action', 'spsr_add_rule_nonce')) {
+            // Check rule limit for free tier
+            if (count($rules) >= $this->get_rule_limit()) {
+                $notice = __('Rule limit reached. Please upgrade to Pro for unlimited rules.', 'ship-restrict');
+                $notice_type = 'error';
+            } else {
             $rule_name = sanitize_text_field(wp_unslash($_POST['spsr_rule_name'] ?? ''));
             $rule_term = intval($_POST['spsr_rule_term'] ?? 0);
             
@@ -241,6 +391,7 @@ class APSR_Pro {
                 $notice = __('Failed to add rule. Please fill all required fields.', 'ship-restrict');
                 $notice_type = 'error';
             }
+            }
         }
         // Handle delete rule
         foreach ($rules as $i => $rule) {
@@ -261,24 +412,42 @@ class APSR_Pro {
         // License key form handling
         if (isset($_POST['spsr_save_license']) && check_admin_referer('spsr_save_license_action', 'spsr_save_license_nonce')) {
             $new_license_key = isset($_POST['spsr_license_key']) ? sanitize_text_field(wp_unslash($_POST['spsr_license_key'])) : '';
-            $activate = ($new_license_key !== $license_key || !$license_valid);
-            $result = $this->keyforge_validate_license($new_license_key, $activate);
-            $settings['license_key'] = $new_license_key;
-            $settings['license_valid'] = $result['valid'];
-            $settings['license_last_checked'] = $now;
-            $settings['license_error'] = $result['error'];
-            $settings['product_id'] = $result['product_id'];
-            update_option('spsr_settings', $settings);
-            $license_key = $new_license_key;
-            $license_valid = $result['valid'];
-            $license_last_checked = $now;
-            $license_error = $result['error'];
-            $cache_valid = $license_valid;
+            
+            if (empty($new_license_key)) {
+                // Clear license data when key is removed
+                $settings['license_key'] = '';
+                $settings['license_valid'] = false;
+                $settings['license_last_checked'] = $now;
+                $settings['license_error'] = ''; // Clear any previous error
+                $settings['product_id'] = '';
+                update_option('spsr_settings', $settings);
+                $license_key = '';
+                $license_valid = false;
+                $license_last_checked = $now;
+                $license_error = '';
+                $cache_valid = false;
+            } else {
+                // Validate the new license key
+                $activate = ($new_license_key !== $license_key || !$license_valid);
+                $result = $this->keyforge_validate_license($new_license_key, $activate);
+                $settings['license_key'] = $new_license_key;
+                $settings['license_valid'] = $result['valid'];
+                $settings['license_last_checked'] = $now;
+                $settings['license_error'] = $result['error'];
+                $settings['product_id'] = $result['product_id'];
+                update_option('spsr_settings', $settings);
+                $license_key = $new_license_key;
+                $license_valid = $result['valid'];
+                $license_last_checked = $now;
+                $license_error = $result['error'];
+                $cache_valid = $license_valid;
+            }
+            
             $just_saved = true;
             // Refresh to prevent resubmission
             echo '<meta http-equiv="refresh" content="0">';
-        } elseif ($license_key && (!$cache_valid || ($now - $license_last_checked) >= SPSR_CACHE_DURATION)) {
-            // Revalidate if cache expired
+        } elseif (!empty($license_key) && (!$cache_valid || ($now - $license_last_checked) >= SPSR_CACHE_DURATION)) {
+            // Revalidate if cache expired - only if license key is not empty
             $result = $this->keyforge_validate_license($license_key, false);
             $settings['license_valid'] = $result['valid'];
             $settings['license_last_checked'] = $now;
@@ -310,12 +479,17 @@ class APSR_Pro {
             <?php
             // Show license notification at the top ONLY if license is invalid
             if (!$license_valid) {
-                echo '<div class="notice notice-error" style="margin-bottom:20px;">';
-                echo '<strong>' . esc_html__('Ship Restrict requires a valid license key.', 'ship-restrict') . '</strong> ';
-                echo '<a href="https://shiprestrict.com/#pricing" target="_blank">' . esc_html__('Upgrade to Pro', 'ship-restrict') . '</a> ';
-                echo esc_html__('or enter your license key below.', 'ship-restrict');
-                if ($license_error) {
-                    echo '<br><span style="color:red;">' . esc_html($license_error) . '</span>';
+                echo '<div class="notice notice-warning" style="margin-bottom:20px;">';
+                echo '<h3 style="margin-top:10px;">' . esc_html__('Ship Restrict Free Version', 'ship-restrict') . '</h3>';
+                echo '<p><strong>' . esc_html__('You are using the free version with limited features:', 'ship-restrict') . '</strong></p>';
+                echo '<ul style="list-style-type: disc; margin-left: 20px;">';
+                echo '<li>' . esc_html__('Maximum 2 restriction rules', 'ship-restrict') . '</li>';
+                echo '<li>' . esc_html__('Maximum 2 products with individual restrictions', 'ship-restrict') . '</li>';
+                echo '</ul>';
+                echo '<p><a href="https://shiprestrict.com/#pricing" target="_blank" class="button button-primary">' . esc_html__('Upgrade to Pro for Unlimited Access', 'ship-restrict') . '</a></p>';
+                // Only show license error if there's actually a license key attempted
+                if (!empty($license_key) && $license_error) {
+                    echo '<p><span style="color:#d63638;">' . esc_html($license_error) . '</span></p>';
                 }
                 echo '</div>';
             }
@@ -401,11 +575,30 @@ class APSR_Pro {
                         </td>
                     </tr>
                 </table>
-                <p><input type="submit" name="spsr_add_rule" class="button button-primary" value="<?php esc_attr_e('Add Rule', 'ship-restrict'); ?>" /></p>
+                <?php
+                // Show upgrade prompt if at rule limit
+                $rule_count = count($rules);
+                $rule_limit = $this->get_rule_limit();
+                if ($rule_count >= $rule_limit && !$this->is_pro_active()) {
+                    // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- HTML content properly escaped in show_upgrade_prompt method
+                    echo $this->show_upgrade_prompt('rules');
+                }
+                ?>
+                <p><input type="submit" name="spsr_add_rule" class="button button-primary" value="<?php esc_attr_e('Add Rule', 'ship-restrict'); ?>" <?php echo ($rule_count >= $rule_limit && !$this->is_pro_active()) ? 'disabled' : ''; ?> /></p>
             </form>
 
             <?php if (!empty($rules)) : ?>
-                <h3><?php esc_html_e('Current Rules', 'ship-restrict'); ?></h3>
+                <h3>
+                    <?php esc_html_e('Current Rules', 'ship-restrict'); ?>
+                    <?php if (!$this->is_pro_active()) : ?>
+                        <span style="margin-left: 10px; font-size: 14px; color: #666;">
+                            (<?php 
+                            /* translators: 1: Number of rules currently used, 2: Maximum number of rules allowed */
+                            echo sprintf(esc_html__('%1$d of %2$d rules used', 'ship-restrict'), count($rules), esc_html($this->get_rule_limit())); 
+                            ?>)
+                        </span>
+                    <?php endif; ?>
+                </h3>
                 <table class="widefat">
                     <thead>
                         <tr>
@@ -473,12 +666,38 @@ class APSR_Pro {
             <?php
             // If license is valid, show badge under License Status
             if ($license_valid) {
-                echo '<div style="margin: 10px 0 20px 0; display: flex; align-items: center; gap: 12px;">';
-                echo '<span style="display: inline-block; background: #46b450; color: #fff; padding: 4px 12px; border-radius: 12px; font-weight: 600; font-size: 14px;">' . esc_html__('Your Ship Restrict license is active.', 'ship-restrict') . '</span>';
+                echo '<div style="margin: 10px 0 20px 0;">';
+                echo '<div style="display: flex; flex-wrap: wrap; align-items: center; background: #e7f7ed; border: 1px solid #46b450; border-radius: 8px; padding: 15px 20px; gap: 15px;">';
+                echo '<span style="display: inline-block; background: #46b450; color: #fff; padding: 4px 12px; border-radius: 12px; font-weight: 600; font-size: 14px;">' . esc_html__('PRO', 'ship-restrict') . '</span>';
+                echo '<div style="flex: 1; min-width: 200px;">';
+                echo '<strong style="color: #2e7d32; font-size: 16px;">' . esc_html__('Ship Restrict Pro is Active', 'ship-restrict') . '</strong><br>';
+                echo '<span style="color: #666; font-size: 13px;">' . esc_html__('Unlimited rules and product restrictions enabled', 'ship-restrict') . '</span>';
+                echo '</div>';
                 if ($license_key) {
                     $portal_url = 'https://shiprestrict.com/#pricing';
-                    echo ' <a href="' . esc_url($portal_url) . '" target="_blank" style="margin-left:20px;">' . esc_html__('Manage License in KeyForge Portal', 'ship-restrict') . '</a>';
+                    echo '<a href="' . esc_url($portal_url) . '" target="_blank" class="button button-secondary">' . esc_html__('Manage License', 'ship-restrict') . '</a>';
                 }
+                echo '</div>';
+                echo '</div>';
+            } else {
+                // Show free tier status
+                echo '<div style="margin: 10px 0 20px 0;">';
+                echo '<div style="display: flex; flex-wrap: wrap; align-items: center; background: #fff8e5; border: 1px solid #ffb900; border-radius: 8px; padding: 15px 20px; gap: 15px;">';
+                echo '<span style="display: inline-block; background: #ffb900; color: #fff; padding: 4px 12px; border-radius: 12px; font-weight: 600; font-size: 14px;">' . esc_html__('FREE', 'ship-restrict') . '</span>';
+                echo '<div style="flex: 1; min-width: 200px;">';
+                echo '<strong style="color: #996800; font-size: 16px;">' . esc_html__('Ship Restrict Free Version', 'ship-restrict') . '</strong><br>';
+                echo '<span style="color: #666; font-size: 13px;">';
+                $restricted_products = $this->count_restricted_products();
+                echo sprintf(
+                    /* translators: 1: Number of rules currently used, 2: Number of products with restrictions */
+                    esc_html__('Using %1$d of 2 rules • %2$d of 2 product restrictions', 'ship-restrict'),
+                    count($rules),
+                    esc_html($restricted_products)
+                );
+                echo '</span>';
+                echo '</div>';
+                echo '<a href="https://shiprestrict.com/#pricing" target="_blank" class="button button-primary">' . esc_html__('Upgrade to Pro', 'ship-restrict') . '</a>';
+                echo '</div>';
                 echo '</div>';
             }
             ?>
@@ -613,30 +832,115 @@ class APSR_Pro {
     public function product_options() {
         global $post;
         $us_states = function_exists('WC') ? WC()->countries->get_states('US') : array();
-        $selected_states = get_post_meta($post->ID, '_restricted_states', true);
-        // Migrate old string to array if needed
-        if (!is_array($selected_states)) {
-            $selected_states = array_filter(array_map('trim', explode(',', (string)$selected_states)));
-            update_post_meta($post->ID, '_restricted_states', $selected_states);
+        
+        // Check if product limit reached for free tier
+        $restricted_count = $this->count_restricted_products();
+        $product_limit = $this->get_product_limit();
+        $has_restrictions = get_post_meta($post->ID, '_restricted_states', true) || 
+                           get_post_meta($post->ID, '_restricted_cities', true) || 
+                           get_post_meta($post->ID, '_restricted_state_cities', true) ||
+                           get_post_meta($post->ID, '_restricted_zip_codes', true);
+        
+        // If this product doesn't have restrictions but we're at the limit, show warning
+        if (!$has_restrictions && $restricted_count >= $product_limit && !$this->is_pro_active()) {
+            echo '<div class="notice notice-warning inline" style="margin: 10px 0;">';
+            echo '<p>' . sprintf(
+                /* translators: 1: Maximum number of product restrictions allowed, 2: URL to pricing page */
+                esc_html__('You\'ve reached the maximum of %1$d product restrictions in the free version.', 'ship-restrict'),
+                esc_html($product_limit)
+            ) . ' <a href="' . esc_url('https://shiprestrict.com/#pricing') . '" target="_blank">' . esc_html__('Upgrade to Pro', 'ship-restrict') . '</a> ' . esc_html__('for unlimited product restrictions.', 'ship-restrict') . '</p>';
+            echo '</div>';
+            echo '<p class="description">' . esc_html__('Remove restrictions from another product to add restrictions here.', 'ship-restrict') . '</p>';
+            return;
         }
-        echo '<p><label for="_restricted_states">' . esc_html__('Restricted States', 'ship-restrict') . '</label></p>';
+        
+        // Get existing data and migrate if needed
+        $selected_states = get_post_meta($post->ID, '_restricted_states', true);
+        $restricted_cities = get_post_meta($post->ID, '_restricted_cities', true);
+        $state_cities = get_post_meta($post->ID, '_restricted_state_cities', true);
+        
+        // Migrate old data to state-city pairs if needed
+        if (!$state_cities && ($selected_states || $restricted_cities)) {
+            $state_cities = array();
+            
+            // Convert old states and cities to state-city pairs
+            if (!is_array($selected_states)) {
+                $selected_states = array_filter(array_map('trim', explode(',', (string)$selected_states)));
+            }
+            if ($restricted_cities) {
+                $cities = array_filter(array_map('trim', explode(',', (string)$restricted_cities)));
+                // If we have both states and cities, create pairs
+                if (!empty($selected_states) && !empty($cities)) {
+                    foreach ($selected_states as $state) {
+                        foreach ($cities as $city) {
+                            $state_cities[] = array('state' => $state, 'city' => $city);
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (!is_array($state_cities)) {
+            $state_cities = array();
+        }
+        
+        echo '<div class="options_group">';
+        echo '<p class="form-field"><label>' . esc_html__('Shipping Restrictions', 'ship-restrict') . '</label></p>';
+        
+        // State-only restrictions
+        echo '<p class="form-field">';
+        echo '<label for="_restricted_states">' . esc_html__('Restricted States (entire state)', 'ship-restrict') . '</label>';
         echo '<select id="_restricted_states" name="_restricted_states[]" multiple size="6" style="width:100%;max-width:400px;">';
         foreach ($us_states as $code => $label) {
-            $selected = in_array($code, $selected_states, true) ? 'selected' : '';
+            $selected = (is_array($selected_states) && in_array($code, $selected_states, true)) ? 'selected' : '';
             echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
         }
         echo '</select>';
-        echo '<p class="description">' . esc_html__('Select one or more states where this product cannot be shipped.', 'ship-restrict') . '</p>';
-        // Cities and ZIPs remain as textareas
-        woocommerce_wp_textarea_input(
-            array(
-                'id'          => '_restricted_cities',
-                'label'       => __('Restricted Cities', 'ship-restrict'),
-                'placeholder' => __('Enter cities separated by commas', 'ship-restrict'),
-                'desc_tip'    => true,
-                'description' => __('Enter cities where this product cannot be shipped.', 'ship-restrict'),
-            )
-        );
+        echo '<span class="description">' . esc_html__('Select states where this product cannot be shipped.', 'ship-restrict') . '</span>';
+        echo '</p>';
+        
+        // State-City pairs
+        echo '<p class="form-field">';
+        echo '<label>' . esc_html__('Specific City Restrictions', 'ship-restrict') . '</label>';
+        echo '<div id="spsr-product-state-cities-container" style="margin-left: 150px;">';
+        
+        if (empty($state_cities)) {
+            // Show one empty pair by default
+            echo '<div class="spsr-state-city-pair" style="margin-bottom: 10px;">';
+            echo '<select name="_restricted_state_cities[0][state]" style="width: 120px; margin-right: 10px;" class="spsr-state-select">';
+            echo '<option value="">' . esc_html__('Select State', 'ship-restrict') . '</option>';
+            foreach ($us_states as $code => $label) {
+                echo '<option value="' . esc_attr($code) . '">' . esc_html($code) . '</option>';
+            }
+            echo '</select>';
+            echo '<input type="text" name="_restricted_state_cities[0][city]" placeholder="' . esc_attr__('City name', 'ship-restrict') . '" style="width: 200px; margin-right: 10px;" class="spsr-city-input">';
+            echo '<button type="button" class="button spsr-remove-city" style="display: none;">' . esc_html__('Remove', 'ship-restrict') . '</button>';
+            echo '</div>';
+        } else {
+            // Show existing state-city pairs
+            $index = 0;
+            foreach ($state_cities as $pair) {
+                echo '<div class="spsr-state-city-pair" style="margin-bottom: 10px;">';
+                echo '<select name="_restricted_state_cities[' . esc_attr($index) . '][state]" style="width: 120px; margin-right: 10px;" class="spsr-state-select">';
+                echo '<option value="">' . esc_html__('Select State', 'ship-restrict') . '</option>';
+                foreach ($us_states as $code => $label) {
+                    $selected = (isset($pair['state']) && $pair['state'] === $code) ? 'selected' : '';
+                    echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($code) . '</option>';
+                }
+                echo '</select>';
+                echo '<input type="text" name="_restricted_state_cities[' . esc_attr($index) . '][city]" value="' . esc_attr(isset($pair['city']) ? $pair['city'] : '') . '" placeholder="' . esc_attr__('City name', 'ship-restrict') . '" style="width: 200px; margin-right: 10px;" class="spsr-city-input">';
+                echo '<button type="button" class="button spsr-remove-city">' . esc_html__('Remove', 'ship-restrict') . '</button>';
+                echo '</div>';
+                $index++;
+            }
+        }
+        
+        echo '</div>';
+        echo '<button type="button" id="spsr-product-add-city" class="button" style="margin-left: 150px;">' . esc_html__('Add Another City', 'ship-restrict') . '</button>';
+        echo '<span class="description" style="margin-left: 10px;">' . esc_html__('Add specific cities with their states.', 'ship-restrict') . '</span>';
+        echo '</p>';
+        
+        // ZIP codes
         woocommerce_wp_textarea_input(
             array(
                 'id'          => '_restricted_zip_codes',
@@ -646,6 +950,53 @@ class APSR_Pro {
                 'description' => __('Enter ZIP codes where this product cannot be shipped.', 'ship-restrict'),
             )
         );
+        
+        echo '</div>';
+        
+        // Add JavaScript for dynamic state-city management
+        ?>
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            var productCityIndex = <?php echo count($state_cities); ?>;
+            
+            // Add new city pair for products
+            $('#spsr-product-add-city').on('click', function() {
+                var newPair = '<div class="spsr-state-city-pair" style="margin-bottom: 10px;">' +
+                    '<select name="_restricted_state_cities[' + productCityIndex + '][state]" style="width: 120px; margin-right: 10px;" class="spsr-state-select">' +
+                    '<option value=""><?php esc_html_e('Select State', 'ship-restrict'); ?></option>';
+                <?php foreach ($us_states as $code => $label) { ?>
+                newPair += '<option value="<?php echo esc_js($code); ?>"><?php echo esc_js($code); ?></option>';
+                <?php } ?>
+                newPair += '</select>' +
+                    '<input type="text" name="_restricted_state_cities[' + productCityIndex + '][city]" placeholder="<?php esc_attr_e('City name', 'ship-restrict'); ?>" style="width: 200px; margin-right: 10px;" class="spsr-city-input">' +
+                    '<button type="button" class="button spsr-remove-city"><?php esc_html_e('Remove', 'ship-restrict'); ?></button>' +
+                    '</div>';
+                    
+                $('#spsr-product-state-cities-container').append(newPair);
+                productCityIndex++;
+                updateProductRemoveButtons();
+            });
+            
+            // Remove city pair
+            $(document).on('click', '#spsr-product-state-cities-container .spsr-remove-city', function() {
+                $(this).closest('.spsr-state-city-pair').remove();
+                updateProductRemoveButtons();
+            });
+            
+            function updateProductRemoveButtons() {
+                var pairs = $('#spsr-product-state-cities-container .spsr-state-city-pair');
+                if (pairs.length > 1) {
+                    $('#spsr-product-state-cities-container .spsr-remove-city').show();
+                } else {
+                    $('#spsr-product-state-cities-container .spsr-remove-city').hide();
+                }
+            }
+            
+            // Initialize
+            updateProductRemoveButtons();
+        });
+        </script>
+        <?php
     }
 
     /**
@@ -665,6 +1016,27 @@ class APSR_Pro {
             return;
         }
         
+        // Check if we're adding restrictions to a new product
+        $had_restrictions = get_post_meta($post_id, '_restricted_states', true) || 
+                           get_post_meta($post_id, '_restricted_cities', true) || 
+                           get_post_meta($post_id, '_restricted_state_cities', true) ||
+                           get_post_meta($post_id, '_restricted_zip_codes', true);
+        
+        $will_have_restrictions = (isset($_POST['_restricted_states']) && !empty($_POST['_restricted_states'])) ||
+                                 (isset($_POST['_restricted_state_cities']) && !empty($_POST['_restricted_state_cities'])) ||
+                                 (isset($_POST['_restricted_zip_codes']) && !empty(trim(sanitize_text_field(wp_unslash($_POST['_restricted_zip_codes'])))));
+        
+        // If adding restrictions to a new product, check limit
+        if (!$had_restrictions && $will_have_restrictions) {
+            $restricted_count = $this->count_restricted_products();
+            $product_limit = $this->get_product_limit();
+            
+            if ($restricted_count >= $product_limit && !$this->is_pro_active()) {
+                // Don't save restrictions if limit reached
+                return;
+            }
+        }
+        
         // Save states as array
         if (isset($_POST['_restricted_states']) && is_array($_POST['_restricted_states'])) {
             $states = array_map('sanitize_text_field', wp_unslash($_POST['_restricted_states']));
@@ -672,12 +1044,47 @@ class APSR_Pro {
         } else {
             delete_post_meta($post_id, '_restricted_states');
         }
-        // Save cities and ZIPs as before
-        $fields = array('_restricted_cities', '_restricted_zip_codes');
-        foreach ($fields as $field) {
-            if (isset($_POST[$field])) {
-                update_post_meta($post_id, $field, sanitize_textarea_field(wp_unslash($_POST[$field])));
+        
+        // Save state-city pairs
+        if (isset($_POST['_restricted_state_cities']) && is_array($_POST['_restricted_state_cities'])) {
+            $state_cities_input = map_deep(wp_unslash($_POST['_restricted_state_cities']), 'sanitize_text_field');
+            $state_cities = array();
+            
+            // Validate structure and filter out empty values
+            foreach ($state_cities_input as $pair) {
+                if (is_array($pair) && isset($pair['state'], $pair['city']) && 
+                    !empty($pair['state']) && !empty($pair['city'])) {
+                    $state_cities[] = array(
+                        'state' => $pair['state'],
+                        'city' => $pair['city']
+                    );
+                }
             }
+            
+            if (!empty($state_cities)) {
+                update_post_meta($post_id, '_restricted_state_cities', $state_cities);
+            } else {
+                delete_post_meta($post_id, '_restricted_state_cities');
+            }
+        } else {
+            delete_post_meta($post_id, '_restricted_state_cities');
+        }
+        
+        // Save ZIP codes
+        if (isset($_POST['_restricted_zip_codes'])) {
+            $zip_codes = sanitize_textarea_field(wp_unslash($_POST['_restricted_zip_codes']));
+            if (!empty(trim($zip_codes))) {
+                update_post_meta($post_id, '_restricted_zip_codes', $zip_codes);
+            } else {
+                delete_post_meta($post_id, '_restricted_zip_codes');
+            }
+        } else {
+            delete_post_meta($post_id, '_restricted_zip_codes');
+        }
+        
+        // Clean up legacy cities field if state-city pairs exist
+        if (get_post_meta($post_id, '_restricted_state_cities', true)) {
+            delete_post_meta($post_id, '_restricted_cities');
         }
     }
 
@@ -690,33 +1097,100 @@ class APSR_Pro {
      */
     public function variation_options($loop, $variation_data, $variation) {
         $us_states = function_exists('WC') ? WC()->countries->get_states('US') : array();
+        
+        // Note: Variations are counted as part of their parent product for restriction limits
+        // So we check the parent product's restriction status
+        $parent_id = wp_get_post_parent_id($variation->ID);
+        $parent_has_restrictions = get_post_meta($parent_id, '_restricted_states', true) || 
+                                  get_post_meta($parent_id, '_restricted_cities', true) || 
+                                  get_post_meta($parent_id, '_restricted_state_cities', true) ||
+                                  get_post_meta($parent_id, '_restricted_zip_codes', true);
+        
+        // Check if we can add restrictions
+        if (!$parent_has_restrictions) {
+            $restricted_count = $this->count_restricted_products();
+            $product_limit = $this->get_product_limit();
+            
+            if ($restricted_count >= $product_limit && !$this->is_pro_active()) {
+                echo '<tr><td colspan="2">';
+                echo '<div class="notice notice-warning inline">';
+                echo '<p>' . sprintf(
+                    /* translators: 1: Maximum number of products allowed */
+                    esc_html__('Product restriction limit reached (%1$d products).', 'ship-restrict'),
+                    esc_html($product_limit)
+                ) . ' <a href="' . esc_url('https://shiprestrict.com/#pricing') . '" target="_blank">' . esc_html__('Upgrade to Pro', 'ship-restrict') . '</a> ' . esc_html__('for unlimited restrictions.', 'ship-restrict') . '</p>';
+                echo '</div>';
+                echo '</td></tr>';
+                return;
+            }
+        }
+        
+        // Get existing data
         $selected_states = get_post_meta($variation->ID, '_restricted_states', true);
         if (!is_array($selected_states)) {
             $selected_states = array_filter(array_map('trim', explode(',', (string)$selected_states)));
-            update_post_meta($variation->ID, '_restricted_states', $selected_states);
         }
+        
+        $state_cities = get_post_meta($variation->ID, '_restricted_state_cities', true);
+        if (!is_array($state_cities)) {
+            $state_cities = array();
+        }
+        
         echo '<tr><td colspan="2">';
-        echo '<label for="_restricted_states_' . esc_attr($variation->ID) . '">' . esc_html__('Restricted States', 'ship-restrict') . '</label><br />';
+        echo '<h4>' . esc_html__('Shipping Restrictions for this Variation', 'ship-restrict') . '</h4>';
+        
+        // States
+        echo '<label for="_restricted_states_' . esc_attr($variation->ID) . '">' . esc_html__('Restricted States (entire state)', 'ship-restrict') . '</label><br />';
         echo '<select id="_restricted_states_' . esc_attr($variation->ID) . '" name="_restricted_states[' . esc_attr($variation->ID) . '][]" multiple size="6" style="width:100%;max-width:400px;">';
         foreach ($us_states as $code => $label) {
             $selected = in_array($code, $selected_states, true) ? 'selected' : '';
             echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
         }
         echo '</select>';
-        echo '<p class="description">' . esc_html__('Select one or more states where this variation cannot be shipped.', 'ship-restrict') . '</p>';
+        echo '<p class="description">' . esc_html__('Select states where this variation cannot be shipped.', 'ship-restrict') . '</p>';
+        
+        // State-City pairs
+        echo '<label>' . esc_html__('Specific City Restrictions', 'ship-restrict') . '</label><br />';
+        echo '<div id="spsr-variation-state-cities-' . esc_attr($variation->ID) . '" class="spsr-variation-cities-container" data-variation-id="' . esc_attr($variation->ID) . '">';
+        
+        if (empty($state_cities)) {
+            // Show one empty pair
+            echo '<div class="spsr-state-city-pair" style="margin-bottom: 10px;">';
+            echo '<select name="_restricted_state_cities[' . esc_attr($variation->ID) . '][0][state]" style="width: 120px; margin-right: 10px;">';
+            echo '<option value="">' . esc_html__('Select State', 'ship-restrict') . '</option>';
+            foreach ($us_states as $code => $label) {
+                echo '<option value="' . esc_attr($code) . '">' . esc_html($code) . '</option>';
+            }
+            echo '</select>';
+            echo '<input type="text" name="_restricted_state_cities[' . esc_attr($variation->ID) . '][0][city]" placeholder="' . esc_attr__('City name', 'ship-restrict') . '" style="width: 200px; margin-right: 10px;">';
+            echo '<button type="button" class="button spsr-remove-variation-city" style="display: none;">' . esc_html__('Remove', 'ship-restrict') . '</button>';
+            echo '</div>';
+        } else {
+            // Show existing pairs
+            $index = 0;
+            foreach ($state_cities as $pair) {
+                echo '<div class="spsr-state-city-pair" style="margin-bottom: 10px;">';
+                echo '<select name="_restricted_state_cities[' . esc_attr($variation->ID) . '][' . esc_attr($index) . '][state]" style="width: 120px; margin-right: 10px;">';
+                echo '<option value="">' . esc_html__('Select State', 'ship-restrict') . '</option>';
+                foreach ($us_states as $code => $label) {
+                    $selected = (isset($pair['state']) && $pair['state'] === $code) ? 'selected' : '';
+                    echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($code) . '</option>';
+                }
+                echo '</select>';
+                echo '<input type="text" name="_restricted_state_cities[' . esc_attr($variation->ID) . '][' . esc_attr($index) . '][city]" value="' . esc_attr(isset($pair['city']) ? $pair['city'] : '') . '" placeholder="' . esc_attr__('City name', 'ship-restrict') . '" style="width: 200px; margin-right: 10px;">';
+                echo '<button type="button" class="button spsr-remove-variation-city">' . esc_html__('Remove', 'ship-restrict') . '</button>';
+                echo '</div>';
+                $index++;
+            }
+        }
+        
+        echo '</div>';
+        echo '<button type="button" class="button spsr-add-variation-city" data-variation-id="' . esc_attr($variation->ID) . '">' . esc_html__('Add Another City', 'ship-restrict') . '</button>';
+        echo '<p class="description">' . esc_html__('Add specific cities with their states for this variation.', 'ship-restrict') . '</p>';
+        
         echo '</td></tr>';
-        // Cities and ZIPs remain as textareas
-        woocommerce_wp_textarea_input(
-            array(
-                'id'          => '_restricted_cities_' . $variation->ID,
-                'name'        => '_restricted_cities[' . $variation->ID . ']',
-                'label'       => __('Restricted Cities', 'ship-restrict'),
-                'placeholder' => __('Enter cities separated by commas', 'ship-restrict'),
-                'desc_tip'    => true,
-                'description' => __('Enter cities where this variation cannot be shipped.', 'ship-restrict'),
-                'value'       => get_post_meta($variation->ID, '_restricted_cities', true),
-            )
-        );
+        
+        // ZIP codes
         woocommerce_wp_textarea_input(
             array(
                 'id'          => '_restricted_zip_codes_' . $variation->ID,
@@ -758,13 +1232,46 @@ class APSR_Pro {
         } else {
             delete_post_meta($variation_id, '_restricted_states');
         }
-        // Save cities and ZIPs as before
-        $fields = array('_restricted_cities', '_restricted_zip_codes');
-        foreach ($fields as $field) {
-            if (isset($_POST[$field][$variation_id])) {
-                update_post_meta($variation_id, $field, sanitize_textarea_field(wp_unslash($_POST[$field][$variation_id])));
+        
+        // Save state-city pairs
+        if (isset($_POST['_restricted_state_cities'][$variation_id]) && is_array($_POST['_restricted_state_cities'][$variation_id])) {
+            $state_cities_input = map_deep(wp_unslash($_POST['_restricted_state_cities'][$variation_id]), 'sanitize_text_field');
+            $state_cities = array();
+            
+            // Validate structure and filter out empty values
+            foreach ($state_cities_input as $pair) {
+                if (is_array($pair) && isset($pair['state'], $pair['city']) && 
+                    !empty($pair['state']) && !empty($pair['city'])) {
+                    $state_cities[] = array(
+                        'state' => $pair['state'],
+                        'city' => $pair['city']
+                    );
+                }
             }
+            
+            if (!empty($state_cities)) {
+                update_post_meta($variation_id, '_restricted_state_cities', $state_cities);
+            } else {
+                delete_post_meta($variation_id, '_restricted_state_cities');
+            }
+        } else {
+            delete_post_meta($variation_id, '_restricted_state_cities');
         }
+        
+        // Save ZIP codes
+        if (isset($_POST['_restricted_zip_codes'][$variation_id])) {
+            $zip_codes = sanitize_textarea_field(wp_unslash($_POST['_restricted_zip_codes'][$variation_id]));
+            if (!empty(trim($zip_codes))) {
+                update_post_meta($variation_id, '_restricted_zip_codes', $zip_codes);
+            } else {
+                delete_post_meta($variation_id, '_restricted_zip_codes');
+            }
+        } else {
+            delete_post_meta($variation_id, '_restricted_zip_codes');
+        }
+        
+        // Clean up legacy cities field
+        delete_post_meta($variation_id, '_restricted_cities');
     }
 
     /**
@@ -819,6 +1326,25 @@ class APSR_Pro {
                         $restriction_reason = sprintf(__('State restriction (%1$s)', 'ship-restrict'), $shipping_state);
                     }
                 }
+                
+                // Check state-city pairs for variation
+                if (!$is_restricted) {
+                    $variation_state_cities = get_post_meta($variation_id, '_restricted_state_cities', true);
+                    if (!empty($variation_state_cities) && is_array($variation_state_cities) && !empty($shipping_city)) {
+                        foreach ($variation_state_cities as $pair) {
+                            if (isset($pair['state'], $pair['city']) && 
+                                $pair['state'] === $shipping_state && 
+                                strtolower($pair['city']) === strtolower($shipping_city)) {
+                                $is_restricted = true;
+                                /* translators: %1$s: City name, %2$s: State code */
+                                $restriction_reason = sprintf(__('City restriction (%1$s, %2$s)', 'ship-restrict'), $shipping_city, $shipping_state);
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Legacy cities check (backward compatibility)
                 $variation_restricted_cities = get_post_meta($variation_id, '_restricted_cities', true);
                 if (!$is_restricted && !empty($variation_restricted_cities) && !empty($shipping_city)) {
                     $restricted_cities = array_map('trim', explode(',', strtolower($variation_restricted_cities)));
@@ -828,6 +1354,7 @@ class APSR_Pro {
                         $restriction_reason = sprintf(__('City restriction (%1$s)', 'ship-restrict'), $shipping_city);
                     }
                 }
+                
                 $variation_restricted_zip_codes = get_post_meta($variation_id, '_restricted_zip_codes', true);
                 if (!$is_restricted && !empty($variation_restricted_zip_codes) && !empty($shipping_postcode)) {
                     $restricted_zip_codes = array_map('trim', explode(',', $variation_restricted_zip_codes));
@@ -853,6 +1380,24 @@ class APSR_Pro {
                     }
                 }
             }
+            // Check state-city pairs for product
+            if (!$is_restricted) {
+                $product_state_cities = get_post_meta($product_id, '_restricted_state_cities', true);
+                if (!empty($product_state_cities) && is_array($product_state_cities) && !empty($shipping_city)) {
+                    foreach ($product_state_cities as $pair) {
+                        if (isset($pair['state'], $pair['city']) && 
+                            $pair['state'] === $shipping_state && 
+                            strtolower($pair['city']) === strtolower($shipping_city)) {
+                            $is_restricted = true;
+                            /* translators: %1$s: City name, %2$s: State code */
+                            $restriction_reason = sprintf(__('City restriction (%1$s, %2$s)', 'ship-restrict'), $shipping_city, $shipping_state);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Legacy cities check (backward compatibility)
             if (!$is_restricted) {
                 $product_restricted_cities = get_post_meta($product_id, '_restricted_cities', true);
                 if (!empty($product_restricted_cities) && !empty($shipping_city)) {
@@ -1182,6 +1727,15 @@ class APSR_Pro {
      * @return array [ 'valid' => bool, 'error' => string, 'product_id' => string ]
      */
     private function keyforge_validate_license($license_key, $activate = false) {
+        // Don't validate empty license keys
+        if (empty($license_key)) {
+            return array(
+                'valid' => false,
+                'error' => '',
+                'product_id' => defined('SPSR_KEYFORGE_PRODUCT_ID') ? SPSR_KEYFORGE_PRODUCT_ID : ''
+            );
+        }
+        
         // Check rate limiting
         if ($this->is_rate_limited()) {
             return array(
@@ -1240,6 +1794,30 @@ class APSR_Pro {
         }
         return array('valid' => false, 'error' => isset($data['message']) ? $data['message'] : 'License invalid.', 'product_id' => $product_id);
     }
+    
+    /**
+     * Clear product restriction cache
+     */
+    public function clear_product_cache() {
+        wp_cache_delete('spsr_states_products_' . md5('states_query'), 'spsr');
+        wp_cache_delete('spsr_cities_products_' . md5('cities_query'), 'spsr');
+        wp_cache_delete('spsr_zip_products_' . md5('zip_query'), 'spsr');
+    }
+    
+    /**
+     * Clear product restriction cache when meta changes
+     * 
+     * @param int    $meta_id    ID of the metadata entry to update.
+     * @param int    $object_id  Object ID.
+     * @param string $meta_key   Meta key.
+     * @param mixed  $meta_value Meta value.
+     */
+    public function clear_product_cache_on_meta_change($meta_id, $object_id, $meta_key, $meta_value) {
+        $restriction_keys = array('_restricted_states', '_restricted_cities', '_restricted_state_cities', '_restricted_zip_codes');
+        if (in_array($meta_key, $restriction_keys, true)) {
+            $this->clear_product_cache();
+        }
+    }
 }
 
 /**
@@ -1267,6 +1845,76 @@ add_action('wp_footer', function() {
         wc_print_notices();
     }
 }, 99);
+
+// Add JavaScript for variation city management
+add_action('admin_footer', function() {
+    global $pagenow, $post_type;
+    if (($pagenow === 'post.php' || $pagenow === 'post-new.php') && $post_type === 'product') {
+        ?>
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            var variationCityIndexes = {};
+            
+            // Initialize indexes for each variation
+            $('.spsr-variation-cities-container').each(function() {
+                var variationId = $(this).data('variation-id');
+                variationCityIndexes[variationId] = $(this).find('.spsr-state-city-pair').length;
+            });
+            
+            // Add city for variations
+            $(document).on('click', '.spsr-add-variation-city', function() {
+                var variationId = $(this).data('variation-id');
+                if (!variationCityIndexes[variationId]) {
+                    variationCityIndexes[variationId] = 1;
+                }
+                
+                var index = variationCityIndexes[variationId];
+                var container = $('#spsr-variation-state-cities-' + variationId);
+                
+                var newPair = '<div class="spsr-state-city-pair" style="margin-bottom: 10px;">' +
+                    '<select name="_restricted_state_cities[' + variationId + '][' + index + '][state]" style="width: 120px; margin-right: 10px;">' +
+                    '<option value=""><?php esc_html_e('Select State', 'ship-restrict'); ?></option>';
+                <?php 
+                $us_states = function_exists('WC') ? WC()->countries->get_states('US') : array();
+                foreach ($us_states as $code => $label) { 
+                ?>
+                newPair += '<option value="<?php echo esc_js($code); ?>"><?php echo esc_js($code); ?></option>';
+                <?php } ?>
+                newPair += '</select>' +
+                    '<input type="text" name="_restricted_state_cities[' + variationId + '][' + index + '][city]" placeholder="<?php esc_attr_e('City name', 'ship-restrict'); ?>" style="width: 200px; margin-right: 10px;">' +
+                    '<button type="button" class="button spsr-remove-variation-city"><?php esc_html_e('Remove', 'ship-restrict'); ?></button>' +
+                    '</div>';
+                    
+                container.append(newPair);
+                variationCityIndexes[variationId]++;
+                updateVariationRemoveButtons(container);
+            });
+            
+            // Remove city for variations
+            $(document).on('click', '.spsr-remove-variation-city', function() {
+                var container = $(this).closest('.spsr-variation-cities-container');
+                $(this).closest('.spsr-state-city-pair').remove();
+                updateVariationRemoveButtons(container);
+            });
+            
+            function updateVariationRemoveButtons(container) {
+                var pairs = container.find('.spsr-state-city-pair');
+                if (pairs.length > 1) {
+                    container.find('.spsr-remove-variation-city').show();
+                } else {
+                    container.find('.spsr-remove-variation-city').hide();
+                }
+            }
+            
+            // Initialize all variation containers
+            $('.spsr-variation-cities-container').each(function() {
+                updateVariationRemoveButtons($(this));
+            });
+        });
+        </script>
+        <?php
+    }
+});
 
 // Add Settings link to plugin row actions
 function shiprestrict_plugin_action_links($actions) {
