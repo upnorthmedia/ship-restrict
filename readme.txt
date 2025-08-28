@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, restrictions, products, pro
 Requires at least: 5.6
 Tested up to: 6.8
 Requires PHP: 7.2
-Stable tag: 1.1.5
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -19,6 +19,10 @@ Restrict products and variations from being shipped to specific states, cities, 
 3. Configure shipping restriction rules under WooCommerce > Ship Restrict.
 
 == Changelog ==
+= 1.2.0 =
+* Created public version for Wordpress Plugin Directory
+* Updated and Improved Caching and License Management
+
 = 1.1.5 =
 * Updated code to match WP best practices
 * Optimized array data for security and performance

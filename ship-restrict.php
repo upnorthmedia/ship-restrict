@@ -3,7 +3,7 @@
  * Plugin Name: Ship Restrict
  * Plugin URI: https://shiprestrict.com
  * Description: Restrict products from shipping to specific US locations. Free: 2 rules & 2 products. Pro: Unlimited restrictions with license key.
- * Version: 1.1.5
+ * Version: 1.2.0
  * Author: UpNorth Media
  * Author URI: https://upnorthmedia.co
  * Text Domain: ship-restrict
@@ -43,7 +43,7 @@ class APSR_Pro {
      *
      * @var string
      */
-    const VERSION = '1.1.5';
+    const VERSION = '1.2.0';
 
     /**
      * Plugin singleton instance
