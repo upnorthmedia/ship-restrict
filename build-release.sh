@@ -59,43 +59,128 @@ if [ ! -f "$README_FILE" ]; then
     exit 1
 fi
 
-# Prompt for changelog entry
+# Get current date in YYYY-MM-DD format
+RELEASE_DATE=$(date +%Y-%m-%d)
+
+# Prompt for changelog entry with categories
 echo -e "\n${BLUE}Enter changelog notes for version $NEW_VERSION:${NC}"
+echo -e "${YELLOW}Use categories: Added, Changed, Fixed, Removed, Security${NC}"
+echo -e "${YELLOW}Format: [category] description (e.g., 'Added: New feature X')${NC}"
 echo -e "${YELLOW}(Enter each change on a new line, press Enter twice when done)${NC}"
 
-CHANGELOG_ENTRIES=()
+# Initialize arrays for each category
+declare -a ADDED_ENTRIES
+declare -a CHANGED_ENTRIES
+declare -a FIXED_ENTRIES
+declare -a REMOVED_ENTRIES
+declare -a SECURITY_ENTRIES
+
 while IFS= read -r line; do
-    if [ -z "$line" ] && [ ${#CHANGELOG_ENTRIES[@]} -gt 0 ]; then
-        break
-    fi
-    if [ -n "$line" ]; then
-        CHANGELOG_ENTRIES+=("$line")
+    if [ -z "$line" ]; then
+        # Check if we have any entries before breaking
+        total_entries=$((${#ADDED_ENTRIES[@]} + ${#CHANGED_ENTRIES[@]} + ${#FIXED_ENTRIES[@]} + ${#REMOVED_ENTRIES[@]} + ${#SECURITY_ENTRIES[@]}))
+        if [ $total_entries -gt 0 ]; then
+            break
+        fi
+    elif [ -n "$line" ]; then
+        # Parse the category from the line
+        if [[ $line =~ ^[Aa]dded:?[[:space:]]*(.*) ]]; then
+            ADDED_ENTRIES+=("${BASH_REMATCH[1]}")
+        elif [[ $line =~ ^[Cc]hanged:?[[:space:]]*(.*) ]]; then
+            CHANGED_ENTRIES+=("${BASH_REMATCH[1]}")
+        elif [[ $line =~ ^[Ff]ixed:?[[:space:]]*(.*) ]]; then
+            FIXED_ENTRIES+=("${BASH_REMATCH[1]}")
+        elif [[ $line =~ ^[Rr]emoved:?[[:space:]]*(.*) ]]; then
+            REMOVED_ENTRIES+=("${BASH_REMATCH[1]}")
+        elif [[ $line =~ ^[Ss]ecurity:?[[:space:]]*(.*) ]]; then
+            SECURITY_ENTRIES+=("${BASH_REMATCH[1]}")
+        else
+            # Default to Added if no category specified
+            echo -e "${YELLOW}No category specified, adding to 'Added' category${NC}"
+            ADDED_ENTRIES+=("$line")
+        fi
     fi
 done
 
-if [ ${#CHANGELOG_ENTRIES[@]} -eq 0 ]; then
+# Check if we have any entries
+total_entries=$((${#ADDED_ENTRIES[@]} + ${#CHANGED_ENTRIES[@]} + ${#FIXED_ENTRIES[@]} + ${#REMOVED_ENTRIES[@]} + ${#SECURITY_ENTRIES[@]}))
+if [ $total_entries -eq 0 ]; then
     echo -e "${YELLOW}⚠️  Warning: No changelog entries provided${NC}"
 fi
 
 # Update readme.txt with new version and changelog
-if [ ${#CHANGELOG_ENTRIES[@]} -gt 0 ]; then
+if [ $total_entries -gt 0 ]; then
     echo -e "${BLUE}📝 Updating readme.txt changelog${NC}"
     
     # Create temp file
     TEMP_README=$(mktemp)
     
-    # Build the new changelog entry
-    NEW_ENTRY="= $NEW_VERSION =\n"
-    for entry in "${CHANGELOG_ENTRIES[@]}"; do
-        NEW_ENTRY="${NEW_ENTRY}* $entry\n"
-    done
-    NEW_ENTRY="${NEW_ENTRY}\n"
+    # Build the new changelog entry with Keep a Changelog format
+    NEW_ENTRY="= $NEW_VERSION - $RELEASE_DATE =\n"
     
-    # Insert new changelog entry after "== Changelog ==" line
+    # Add each category if it has entries
+    if [ ${#ADDED_ENTRIES[@]} -gt 0 ]; then
+        NEW_ENTRY="${NEW_ENTRY}### Added\n"
+        for entry in "${ADDED_ENTRIES[@]}"; do
+            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+        done
+        NEW_ENTRY="${NEW_ENTRY}\n"
+    fi
+    
+    if [ ${#CHANGED_ENTRIES[@]} -gt 0 ]; then
+        NEW_ENTRY="${NEW_ENTRY}### Changed\n"
+        for entry in "${CHANGED_ENTRIES[@]}"; do
+            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+        done
+        NEW_ENTRY="${NEW_ENTRY}\n"
+    fi
+    
+    if [ ${#FIXED_ENTRIES[@]} -gt 0 ]; then
+        NEW_ENTRY="${NEW_ENTRY}### Fixed\n"
+        for entry in "${FIXED_ENTRIES[@]}"; do
+            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+        done
+        NEW_ENTRY="${NEW_ENTRY}\n"
+    fi
+    
+    if [ ${#REMOVED_ENTRIES[@]} -gt 0 ]; then
+        NEW_ENTRY="${NEW_ENTRY}### Removed\n"
+        for entry in "${REMOVED_ENTRIES[@]}"; do
+            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+        done
+        NEW_ENTRY="${NEW_ENTRY}\n"
+    fi
+    
+    if [ ${#SECURITY_ENTRIES[@]} -gt 0 ]; then
+        NEW_ENTRY="${NEW_ENTRY}### Security\n"
+        for entry in "${SECURITY_ENTRIES[@]}"; do
+            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+        done
+        NEW_ENTRY="${NEW_ENTRY}\n"
+    fi
+    
+    # Look for [Unreleased] section and insert after it, or after == Changelog ==
     awk -v new_entry="$NEW_ENTRY" '
-    /^== Changelog ==/ {
+    /^= \[Unreleased\]/ {
         print
+        found_unreleased = 1
+        next
+    }
+    /^= [0-9]+\.[0-9]+\.[0-9]+/ && found_unreleased {
         printf "%s", new_entry
+        found_unreleased = 0
+        print
+        next
+    }
+    /^== Changelog ==/ && !found_unreleased {
+        print
+        getline
+        if ($0 ~ /^= \[Unreleased\]/) {
+            print
+        } else {
+            printf "%s", new_entry
+            print
+        }
         next
     }
     { print }
@@ -180,5 +265,11 @@ echo -e "4. Create git tag: git tag v$NEW_VERSION && git push origin v$NEW_VERSI
 echo -e "5. Remove backup: rm ${PLUGIN_FILE}.backup"
 echo -e "\n${BLUE}WordPress.org Release Process:${NC}"
 echo -e "• The 'Stable tag' in readme.txt determines the current release"
-echo -e "• Changelog entries help users understand what changed"
+echo -e "• Changelog follows Keep a Changelog format with categories"
 echo -e "• Test thoroughly before releasing to avoid user issues"
+echo -e "\n${BLUE}Changelog Categories:${NC}"
+echo -e "• ${GREEN}Added${NC} - New features"
+echo -e "• ${YELLOW}Changed${NC} - Changes to existing functionality"
+echo -e "• ${RED}Fixed${NC} - Bug fixes"
+echo -e "• ${RED}Removed${NC} - Removed features"
+echo -e "• ${RED}Security${NC} - Security fixes and vulnerabilities"
