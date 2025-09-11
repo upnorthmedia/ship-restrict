@@ -18,6 +18,7 @@
 
 // KeyForge product identifier for APSR Pro licensing
 if ( ! defined( 'SPSR_KEYFORGE_PRODUCT_ID' ) ) {
+    // gitleaks:allow - Public product identifier for KeyForge licensing, not a secret
     define( 'SPSR_KEYFORGE_PRODUCT_ID', 'p_bg74trwu1aa8d801q35qri5z' );
 }
 
@@ -594,6 +595,7 @@ class APSR_Pro {
                         <span style="margin-left: 10px; font-size: 14px; color: #666;">
                             (<?php 
                             /* translators: 1: Number of rules currently used, 2: Maximum number of rules allowed */
+                            // nosemgrep: audit.php.wp.security.xss.unescaped-stored-option
                             echo sprintf(esc_html__('%1$d of %2$d rules used', 'ship-restrict'), count($rules), intval($this->get_rule_limit())); 
                             ?>)
                         </span>
@@ -688,6 +690,7 @@ class APSR_Pro {
                 echo '<strong style="color: #996800; font-size: 16px;">' . esc_html__('Ship Restrict Free Version', 'ship-restrict') . '</strong><br>';
                 echo '<span style="color: #666; font-size: 13px;">';
                 $restricted_products = $this->count_restricted_products();
+                // nosemgrep: audit.php.wp.security.xss.unescaped-stored-option
                 echo sprintf(
                     /* translators: 1: Number of rules currently used, 2: Number of products with restrictions */
                     esc_html__('Using %1$d of 2 rules • %2$d of 2 product restrictions', 'ship-restrict'),
