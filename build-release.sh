@@ -64,8 +64,8 @@ RELEASE_DATE=$(date +%Y-%m-%d)
 
 # Prompt for changelog entry with categories
 echo -e "\n${BLUE}Enter changelog notes for version $NEW_VERSION:${NC}"
-echo -e "${YELLOW}Use categories: Added, Changed, Fixed, Removed, Security${NC}"
-echo -e "${YELLOW}Format: [category] description (e.g., 'Added: New feature X')${NC}"
+echo -e "${YELLOW}Use keywords: Added, Changed, Fixed, Removed, Security, Tweak, Dev${NC}"
+echo -e "${YELLOW}Format: [keyword] description (e.g., 'Added: New feature X')${NC}"
 echo -e "${YELLOW}(Enter each change on a new line, press Enter twice when done)${NC}"
 
 # Initialize arrays for each category
@@ -74,26 +74,32 @@ declare -a CHANGED_ENTRIES
 declare -a FIXED_ENTRIES
 declare -a REMOVED_ENTRIES
 declare -a SECURITY_ENTRIES
+declare -a TWEAK_ENTRIES
+declare -a DEV_ENTRIES
 
 while IFS= read -r line; do
     if [ -z "$line" ]; then
         # Check if we have any entries before breaking
-        total_entries=$((${#ADDED_ENTRIES[@]} + ${#CHANGED_ENTRIES[@]} + ${#FIXED_ENTRIES[@]} + ${#REMOVED_ENTRIES[@]} + ${#SECURITY_ENTRIES[@]}))
+        total_entries=$((${#ADDED_ENTRIES[@]} + ${#CHANGED_ENTRIES[@]} + ${#FIXED_ENTRIES[@]} + ${#REMOVED_ENTRIES[@]} + ${#SECURITY_ENTRIES[@]} + ${#TWEAK_ENTRIES[@]} + ${#DEV_ENTRIES[@]}))
         if [ $total_entries -gt 0 ]; then
             break
         fi
     elif [ -n "$line" ]; then
         # Parse the category from the line
-        if [[ $line =~ ^[Aa]dded:?[[:space:]]*(.*) ]]; then
+        if [[ $line =~ ^[Aa]dded?:?[[:space:]]*(.*) ]]; then
             ADDED_ENTRIES+=("${BASH_REMATCH[1]}")
-        elif [[ $line =~ ^[Cc]hanged:?[[:space:]]*(.*) ]]; then
+        elif [[ $line =~ ^[Cc]hanged?:?[[:space:]]*(.*) ]]; then
             CHANGED_ENTRIES+=("${BASH_REMATCH[1]}")
-        elif [[ $line =~ ^[Ff]ixed:?[[:space:]]*(.*) ]]; then
+        elif [[ $line =~ ^[Ff]ixed?:?[[:space:]]*(.*) ]]; then
             FIXED_ENTRIES+=("${BASH_REMATCH[1]}")
-        elif [[ $line =~ ^[Rr]emoved:?[[:space:]]*(.*) ]]; then
+        elif [[ $line =~ ^[Rr]emoved?:?[[:space:]]*(.*) ]]; then
             REMOVED_ENTRIES+=("${BASH_REMATCH[1]}")
         elif [[ $line =~ ^[Ss]ecurity:?[[:space:]]*(.*) ]]; then
             SECURITY_ENTRIES+=("${BASH_REMATCH[1]}")
+        elif [[ $line =~ ^[Tt]weak:?[[:space:]]*(.*) ]]; then
+            TWEAK_ENTRIES+=("${BASH_REMATCH[1]}")
+        elif [[ $line =~ ^[Dd]ev:?[[:space:]]*(.*) ]]; then
+            DEV_ENTRIES+=("${BASH_REMATCH[1]}")
         else
             # Default to Added if no category specified
             echo -e "${YELLOW}No category specified, adding to 'Added' category${NC}"
@@ -103,111 +109,80 @@ while IFS= read -r line; do
 done
 
 # Check if we have any entries
-total_entries=$((${#ADDED_ENTRIES[@]} + ${#CHANGED_ENTRIES[@]} + ${#FIXED_ENTRIES[@]} + ${#REMOVED_ENTRIES[@]} + ${#SECURITY_ENTRIES[@]}))
+total_entries=$((${#ADDED_ENTRIES[@]} + ${#CHANGED_ENTRIES[@]} + ${#FIXED_ENTRIES[@]} + ${#REMOVED_ENTRIES[@]} + ${#SECURITY_ENTRIES[@]} + ${#TWEAK_ENTRIES[@]} + ${#DEV_ENTRIES[@]}))
 if [ $total_entries -eq 0 ]; then
     echo -e "${YELLOW}⚠️  Warning: No changelog entries provided${NC}"
 fi
 
-# Update readme.txt and changelog.txt with new version and changelog
+# Update changelog.txt with new version and changelog
 if [ $total_entries -gt 0 ]; then
-    echo -e "${BLUE}📝 Updating readme.txt and changelog.txt${NC}"
+    echo -e "${BLUE}📝 Updating changelog.txt${NC}"
     
-    # Create temp file for readme
-    TEMP_README=$(mktemp)
+    # Build the new changelog entry in WooCommerce format
+    NEW_ENTRY="$RELEASE_DATE - version $NEW_VERSION\n"
     
-    # Build the new changelog entry with Keep a Changelog format
-    NEW_ENTRY="= $NEW_VERSION - $RELEASE_DATE =\n"
-    
-    # Add each category if it has entries
+    # Add each entry with WooCommerce format
     if [ ${#ADDED_ENTRIES[@]} -gt 0 ]; then
-        NEW_ENTRY="${NEW_ENTRY}### Added\n"
         for entry in "${ADDED_ENTRIES[@]}"; do
-            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+            NEW_ENTRY="${NEW_ENTRY}* Added - $entry\n"
         done
-        NEW_ENTRY="${NEW_ENTRY}\n"
     fi
     
     if [ ${#CHANGED_ENTRIES[@]} -gt 0 ]; then
-        NEW_ENTRY="${NEW_ENTRY}### Changed\n"
         for entry in "${CHANGED_ENTRIES[@]}"; do
-            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+            NEW_ENTRY="${NEW_ENTRY}* Changed - $entry\n"
         done
-        NEW_ENTRY="${NEW_ENTRY}\n"
     fi
     
     if [ ${#FIXED_ENTRIES[@]} -gt 0 ]; then
-        NEW_ENTRY="${NEW_ENTRY}### Fixed\n"
         for entry in "${FIXED_ENTRIES[@]}"; do
-            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+            NEW_ENTRY="${NEW_ENTRY}* Fixed - $entry\n"
         done
-        NEW_ENTRY="${NEW_ENTRY}\n"
     fi
     
     if [ ${#REMOVED_ENTRIES[@]} -gt 0 ]; then
-        NEW_ENTRY="${NEW_ENTRY}### Removed\n"
         for entry in "${REMOVED_ENTRIES[@]}"; do
-            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+            NEW_ENTRY="${NEW_ENTRY}* Removed - $entry\n"
         done
-        NEW_ENTRY="${NEW_ENTRY}\n"
     fi
     
     if [ ${#SECURITY_ENTRIES[@]} -gt 0 ]; then
-        NEW_ENTRY="${NEW_ENTRY}### Security\n"
         for entry in "${SECURITY_ENTRIES[@]}"; do
-            NEW_ENTRY="${NEW_ENTRY}* $entry\n"
+            NEW_ENTRY="${NEW_ENTRY}* Security - $entry\n"
         done
-        NEW_ENTRY="${NEW_ENTRY}\n"
     fi
     
-    # Look for [Unreleased] section and insert after it, or after == Changelog ==
-    awk -v new_entry="$NEW_ENTRY" '
-    /^= \[Unreleased\]/ {
-        print
-        found_unreleased = 1
-        next
-    }
-    /^= [0-9]+\.[0-9]+\.[0-9]+/ && found_unreleased {
-        printf "%s", new_entry
-        found_unreleased = 0
-        print
-        next
-    }
-    /^== Changelog ==/ && !found_unreleased {
-        print
-        getline
-        if ($0 ~ /^= \[Unreleased\]/) {
-            print
-        } else {
-            printf "%s", new_entry
-            print
-        }
-        next
-    }
-    { print }
-    ' $README_FILE > $TEMP_README
+    if [ ${#TWEAK_ENTRIES[@]} -gt 0 ]; then
+        for entry in "${TWEAK_ENTRIES[@]}"; do
+            NEW_ENTRY="${NEW_ENTRY}* Tweak - $entry\n"
+        done
+    fi
     
-    mv $TEMP_README $README_FILE
+    if [ ${#DEV_ENTRIES[@]} -gt 0 ]; then
+        for entry in "${DEV_ENTRIES[@]}"; do
+            NEW_ENTRY="${NEW_ENTRY}* Dev - $entry\n"
+        done
+    fi
     
     # Update changelog.txt if it exists
     if [ -f "changelog.txt" ]; then
-        echo -e "${BLUE}📝 Updating changelog.txt${NC}"
-        
         # Create temp file for changelog
         TEMP_CHANGELOG=$(mktemp)
         
         # Add new entry at the beginning of the changelog after the header
         awk -v new_entry="$NEW_ENTRY" '
-        /^== Changelog ==/ {
+        /^\*\*\* Ship Restrict Changelog \*\*\*/ {
             print
-            getline
+            print ""
             printf "%s", new_entry
-            print
             next
         }
         { print }
         ' changelog.txt > $TEMP_CHANGELOG
         
         mv $TEMP_CHANGELOG changelog.txt
+    else
+        echo -e "${YELLOW}⚠️  Warning: changelog.txt not found${NC}"
     fi
 fi
 
@@ -295,9 +270,11 @@ echo -e "\n${BLUE}WordPress.org Release Process:${NC}"
 echo -e "• The 'Stable tag' in readme.txt determines the current release"
 echo -e "• Changelog follows Keep a Changelog format with categories"
 echo -e "• Test thoroughly before releasing to avoid user issues"
-echo -e "\n${BLUE}Changelog Categories:${NC}"
+echo -e "\n${BLUE}Changelog Keywords (WooCommerce Format):${NC}"
 echo -e "• ${GREEN}Added${NC} - New features"
 echo -e "• ${YELLOW}Changed${NC} - Changes to existing functionality"
+echo -e "• ${YELLOW}Tweak${NC} - Minor tweaks and adjustments"
 echo -e "• ${RED}Fixed${NC} - Bug fixes"
 echo -e "• ${RED}Removed${NC} - Removed features"
 echo -e "• ${RED}Security${NC} - Security fixes and vulnerabilities"
+echo -e "• ${BLUE}Dev${NC} - Developer-related changes"

@@ -1,84 +1,57 @@
-== Changelog ==
-= 1.2.4 - 2025-09-11 =
-### Added
-* changelog.txt
+*** Ship Restrict Changelog ***
 
-= 1.2.3 - 2025-08-30 =
-### Removed
-* Excess tags in readme.txt
+2025-09-11 - version 1.2.4
+* Added - Changelog.txt
 
-= 1.2.2 - 2025-08-30 =
-### Changed
-* Update readme.txt
+2025-08-30 - version 1.2.3
+* Removed - Excess tags in readme.txt
 
-= 1.2.2 - 2025-08-30 =
-### Changed
-* Update readme.txt
+2025-08-30 - version 1.2.2
+* Changed - Update readme.txt
 
-= 1.2.1 - 2024-01-15 =
-### Changed
-* Updated readme.txt with comprehensive documentation for WordPress.org submission
-* Enhanced description with detailed use cases and benefits
-* Improved FAQ section with common user questions
+2024-01-15 - version 1.2.1
+* Changed - Updated readme.txt with comprehensive documentation for WordPress.org submission
+* Changed - Enhanced description with detailed use cases and benefits
+* Changed - Improved FAQ section with common user questions
+* Added - Detailed installation instructions
+* Added - Screenshot descriptions for better user guidance
+* Added - SEO-optimized content for better plugin discovery
 
-### Added
-* Detailed installation instructions
-* Screenshot descriptions for better user guidance
-* SEO-optimized content for better plugin discovery
+2024-01-10 - version 1.2.0
+* Added - Public version release for WordPress Plugin Directory
+* Added - State-city pair restrictions for product variations
+* Added - JavaScript dynamic management for city restrictions
+* Added - Enhanced cache management system
+* Added - Automatic cache clearing on product updates
+* Changed - Improved license validation handling
+* Changed - Updated UI elements to reflect free version limitations
+* Changed - Enhanced upgrade prompts for better user experience
+* Fixed - Cache invalidation issues on setting changes
+* Fixed - City name case-sensitivity in validation
+* Security - Improved nonce validation for all AJAX requests
+* Security - Enhanced data sanitization for user inputs
 
-= 1.2.0 - 2024-01-10 =
-### Added
-* Public version release for WordPress Plugin Directory
-* State-city pair restrictions for product variations
-* JavaScript dynamic management for city restrictions
-* Enhanced cache management system
-* Automatic cache clearing on product updates
+2023-12-20 - version 1.1.5
+* Changed - Refactored code to match WordPress coding standards
+* Changed - Optimized database queries for better performance
+* Fixed - Array data handling for improved security
+* Fixed - Memory usage optimization for large product catalogs
+* Security - Enhanced input validation for all user-submitted data
+* Security - Improved SQL query preparation to prevent injection attacks
 
-### Changed
-* Improved license validation handling
-* Updated UI elements to reflect free version limitations
-* Enhanced upgrade prompts for better user experience
+2023-12-01 - version 1.1.0
+* Added - New rule builder interface with improved UX
+* Added - Support for WooCommerce HPOS (High-Performance Order Storage)
+* Added - Bulk selection tools for states and cities
+* Changed - Updated WooCommerce API calls for better compatibility
+* Changed - Improved cart validation logic for faster checkout
+* Fixed - Compatibility issues with WooCommerce 8.0+
+* Fixed - JavaScript conflicts with certain themes
 
-### Fixed
-* Cache invalidation issues on setting changes
-* City name case-sensitivity in validation
-
-### Security
-* Improved nonce validation for all AJAX requests
-* Enhanced data sanitization for user inputs
-
-= 1.1.5 - 2023-12-20 =
-### Changed
-* Refactored code to match WordPress coding standards
-* Optimized database queries for better performance
-
-### Fixed
-* Array data handling for improved security
-* Memory usage optimization for large product catalogs
-
-### Security
-* Enhanced input validation for all user-submitted data
-* Improved SQL query preparation to prevent injection attacks
-
-= 1.1.0 - 2023-12-01 =
-### Added
-* New rule builder interface with improved UX
-* Support for WooCommerce HPOS (High-Performance Order Storage)
-* Bulk selection tools for states and cities
-
-### Changed
-* Updated WooCommerce API calls for better compatibility
-* Improved cart validation logic for faster checkout
-
-### Fixed
-* Compatibility issues with WooCommerce 8.0+
-* JavaScript conflicts with certain themes
-
-= 1.0.0 - 2023-11-15 =
-### Added
-* Initial release
-* Product-level shipping restrictions
-* Category and tag-based restriction rules
-* State, city, and zip code restrictions
-* WooCommerce integration
-* License system integration with KeyForge
+2023-11-15 - version 1.0.0
+* Added - Initial release
+* Added - Product-level shipping restrictions
+* Added - Category and tag-based restriction rules
+* Added - State, city, and zip code restrictions
+* Added - WooCommerce integration
+* Added - License system integration with KeyForge
