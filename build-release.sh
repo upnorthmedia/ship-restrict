@@ -108,11 +108,11 @@ if [ $total_entries -eq 0 ]; then
     echo -e "${YELLOW}⚠️  Warning: No changelog entries provided${NC}"
 fi
 
-# Update readme.txt with new version and changelog
+# Update readme.txt and changelog.txt with new version and changelog
 if [ $total_entries -gt 0 ]; then
-    echo -e "${BLUE}📝 Updating readme.txt changelog${NC}"
+    echo -e "${BLUE}📝 Updating readme.txt and changelog.txt${NC}"
     
-    # Create temp file
+    # Create temp file for readme
     TEMP_README=$(mktemp)
     
     # Build the new changelog entry with Keep a Changelog format
@@ -187,6 +187,28 @@ if [ $total_entries -gt 0 ]; then
     ' $README_FILE > $TEMP_README
     
     mv $TEMP_README $README_FILE
+    
+    # Update changelog.txt if it exists
+    if [ -f "changelog.txt" ]; then
+        echo -e "${BLUE}📝 Updating changelog.txt${NC}"
+        
+        # Create temp file for changelog
+        TEMP_CHANGELOG=$(mktemp)
+        
+        # Add new entry at the beginning of the changelog after the header
+        awk -v new_entry="$NEW_ENTRY" '
+        /^== Changelog ==/ {
+            print
+            getline
+            printf "%s", new_entry
+            print
+            next
+        }
+        { print }
+        ' changelog.txt > $TEMP_CHANGELOG
+        
+        mv $TEMP_CHANGELOG changelog.txt
+    fi
 fi
 
 # Update version in plugin file

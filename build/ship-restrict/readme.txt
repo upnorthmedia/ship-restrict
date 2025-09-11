@@ -173,6 +173,10 @@ Free version users can get support through the WordPress.org support forums. Pro
 == Changelog ==
 = 1.2.4 - 2025-09-11 =
 ### Added
+* changelog.txt
+
+= 1.2.4 - 2025-09-11 =
+### Added
 * Changelog.txt
 
 = 1.2.3 - 2025-08-30 =
