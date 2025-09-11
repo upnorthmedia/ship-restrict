@@ -1759,7 +1759,12 @@ class APSR_Pro {
             'deviceIdentifier' => $device_id,
         );
         if ($activate) {
-            $body['deviceName'] = $site_name . ' (' . $site_url . ')';
+            $device_name = $site_name . ' (' . $site_url . ')';
+            // Truncate device name to 64 characters max (API requirement)
+            if (strlen($device_name) > 64) {
+                $device_name = substr($device_name, 0, 61) . '...';
+            }
+            $body['deviceName'] = $device_name;
         }
         $args = array(
             'headers' => array('Content-Type' => 'application/json'),
