@@ -4,7 +4,7 @@ Tags: shipping restrictions, shipping rules, shipping compliance, product restri
 Requires at least: 5.6
 Tested up to: 6.8
 Requires PHP: 7.2
-Stable tag: 1.2.3
+Stable tag: 1.2.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -171,6 +171,10 @@ Free version users can get support through the WordPress.org support forums. Pro
 8. **License Activation** - Simple Pro license activation interface
 
 == Changelog ==
+= 1.2.4 - 2025-09-11 =
+### Added
+* Changelog.txt
+
 = 1.2.3 - 2025-08-30 =
 ### Removed
 * Excess tags in readme.txt

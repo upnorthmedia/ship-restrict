@@ -223,6 +223,12 @@ echo -e "${BLUE}📦 Copying plugin files${NC}"
 cp $PLUGIN_FILE $PLUGIN_BUILD_DIR/
 cp $README_FILE $PLUGIN_BUILD_DIR/
 
+# Copy changelog if it exists
+if [ -f "changelog.txt" ]; then
+    cp changelog.txt $PLUGIN_BUILD_DIR/
+    echo -e "${BLUE}📄 Copied changelog.txt${NC}"
+fi
+
 # Copy any additional assets if they exist
 if [ -d "assets" ]; then
     cp -r assets $PLUGIN_BUILD_DIR/
