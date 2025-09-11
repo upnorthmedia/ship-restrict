@@ -20,7 +20,6 @@ playwright/.cache/
 apparc.md
 PLUGIN_OVERVIEW.md
 README_TESTS.md
-*.md
 
 # OS files
 .DS_Store
