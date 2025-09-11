@@ -1,5 +1,8 @@
 *** Ship Restrict Changelog ***
 
+2025-09-11 - version 1.2.5
+* Security - Changed esc_html to intval to harden security and improve performance against stored xss attacks
+
 2025-09-11 - version 1.2.4
 * Added - Changelog.txt
 

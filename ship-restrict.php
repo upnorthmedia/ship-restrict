@@ -3,7 +3,7 @@
  * Plugin Name: Ship Restrict
  * Plugin URI: https://shiprestrict.com
  * Description: Restrict products from shipping to specific US locations. Free: 2 rules & 2 products. Pro: Unlimited restrictions with license key.
- * Version: 1.2.4
+ * Version: 1.2.5
  * Author: UpNorth Media
  * Author URI: https://upnorthmedia.co
  * Text Domain: ship-restrict
@@ -43,7 +43,7 @@ class APSR_Pro {
      *
      * @var string
      */
-    const VERSION = '1.2.4';
+    const VERSION = '1.2.5';
 
     /**
      * Plugin singleton instance
@@ -594,7 +594,7 @@ class APSR_Pro {
                         <span style="margin-left: 10px; font-size: 14px; color: #666;">
                             (<?php 
                             /* translators: 1: Number of rules currently used, 2: Maximum number of rules allowed */
-                            echo sprintf(esc_html__('%1$d of %2$d rules used', 'ship-restrict'), count($rules), esc_html($this->get_rule_limit())); 
+                            echo sprintf(esc_html__('%1$d of %2$d rules used', 'ship-restrict'), count($rules), intval($this->get_rule_limit())); 
                             ?>)
                         </span>
                     <?php endif; ?>
@@ -692,7 +692,7 @@ class APSR_Pro {
                     /* translators: 1: Number of rules currently used, 2: Number of products with restrictions */
                     esc_html__('Using %1$d of 2 rules • %2$d of 2 product restrictions', 'ship-restrict'),
                     count($rules),
-                    esc_html($restricted_products)
+                    intval($restricted_products)
                 );
                 echo '</span>';
                 echo '</div>';
