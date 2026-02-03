@@ -3,7 +3,7 @@
  * Plugin Name: Ship Restrict
  * Plugin URI: https://shiprestrict.com
  * Description: Restrict products from shipping to specific US locations. Free: 2 rules & 2 products. Pro: Unlimited restrictions with license key.
- * Version: 1.2.8
+ * Version: 1.2.9
  * Author: UpNorth Media
  * Author URI: https://upnorthmedia.co
  * Text Domain: ship-restrict
@@ -39,7 +39,7 @@ class APSR_Pro {
      *
      * @var string
      */
-    const VERSION = '1.2.8';
+    const VERSION = '1.2.9';
 
     /**
      * Plugin singleton instance
@@ -679,17 +679,71 @@ class APSR_Pro {
             return;
         }
 
-        // WooCommerce bundles Select2.
-        wp_enqueue_script( 'select2' );
+        // WooCommerce bundles selectWoo (enhanced Select2 with WP admin styling).
+        wp_enqueue_script( 'selectWoo' );
         wp_enqueue_style( 'select2' );
 
-        // Add inline CSS for Select2 styling.
-        wp_add_inline_style(
-            'select2',
-            '.spsr-select2-states { width: 100% !important; max-width: 400px; }
-            .spsr-select2-states + .select2-container { max-width: 400px; }
-            .spsr-select2-states + .select2-container .select2-selection--multiple { min-height: 120px; }'
-        );
+        // Add inline CSS for Select2 styling to match WP admin.
+        $custom_css = '
+            /* Hide original select when Select2 is active */
+            select.spsr-select2-states.select2-hidden-accessible {
+                position: absolute !important;
+                clip: rect(0,0,0,0) !important;
+            }
+            /* Container sizing */
+            .spsr-select2-states + .select2-container {
+                width: 100% !important;
+                max-width: 400px;
+            }
+            /* Selection box styling */
+            .spsr-select2-states + .select2-container .select2-selection--multiple {
+                min-height: 100px;
+                background: #fff;
+                border: 1px solid #8c8f94;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            .spsr-select2-states + .select2-container .select2-selection--multiple:focus,
+            .spsr-select2-states + .select2-container.select2-container--focus .select2-selection--multiple {
+                border-color: #2271b1;
+                box-shadow: 0 0 0 1px #2271b1;
+                outline: none;
+            }
+            /* Selected tags */
+            .spsr-select2-states + .select2-container .select2-selection__choice {
+                background: #f0f0f1;
+                border: 1px solid #c3c4c7;
+                border-radius: 3px;
+                padding: 2px 6px;
+                margin: 2px;
+            }
+            .spsr-select2-states + .select2-container .select2-selection__choice__remove {
+                color: #50575e;
+                margin-right: 4px;
+            }
+            .spsr-select2-states + .select2-container .select2-selection__choice__remove:hover {
+                color: #d63638;
+            }
+            /* Dropdown styling */
+            .select2-container--default .select2-results__option--highlighted[aria-selected] {
+                background-color: #2271b1;
+            }
+            .select2-dropdown {
+                border-color: #8c8f94;
+                border-radius: 4px;
+            }
+            .select2-search--dropdown .select2-search__field {
+                border: 1px solid #8c8f94;
+                border-radius: 4px;
+                padding: 8px;
+            }
+            .select2-search--dropdown .select2-search__field:focus {
+                border-color: #2271b1;
+                box-shadow: 0 0 0 1px #2271b1;
+                outline: none;
+            }
+        ';
+        wp_add_inline_style( 'select2', $custom_css );
     }
 
     /**
@@ -972,7 +1026,7 @@ class APSR_Pro {
                     <tr valign="top">
                         <th scope="row"><?php echo esc_html__('States', 'ship-restrict'); ?></th>
                         <td>
-                            <select name="spsr_rule_states[]" multiple size="6" class="large-text spsr-select2-states">
+                            <select name="spsr_rule_states[]" multiple class="spsr-select2-states">
                                 <?php foreach ($us_states as $code => $label) {
                                     echo '<option value="' . esc_attr($code) . '">' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
                                 } ?>
@@ -1347,7 +1401,7 @@ class APSR_Pro {
         // State-only restrictions
         echo '<p class="form-field">';
         echo '<label for="_restricted_states">' . esc_html__('Restricted States (entire state)', 'ship-restrict') . '</label>';
-        echo '<select id="_restricted_states" name="_restricted_states[]" multiple size="6" class="spsr-select2-states" style="width:100%;max-width:400px;">';
+        echo '<select id="_restricted_states" name="_restricted_states[]" multiple class="spsr-select2-states">';
         foreach ($us_states as $code => $label) {
             $selected = (is_array($selected_states) && in_array($code, $selected_states, true)) ? 'selected' : '';
             echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
@@ -1600,7 +1654,7 @@ class APSR_Pro {
         
         // States
         echo '<label for="_restricted_states_' . esc_attr($variation->ID) . '">' . esc_html__('Restricted States (entire state)', 'ship-restrict') . '</label><br />';
-        echo '<select id="_restricted_states_' . esc_attr($variation->ID) . '" name="_restricted_states[' . esc_attr($variation->ID) . '][]" multiple size="6" class="spsr-select2-states" style="width:100%;max-width:400px;">';
+        echo '<select id="_restricted_states_' . esc_attr($variation->ID) . '" name="_restricted_states[' . esc_attr($variation->ID) . '][]" multiple class="spsr-select2-states">';
         foreach ($us_states as $code => $label) {
             $selected = in_array($code, $selected_states, true) ? 'selected' : '';
             echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
