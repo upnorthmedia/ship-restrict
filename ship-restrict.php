@@ -3,7 +3,7 @@
  * Plugin Name: Ship Restrict
  * Plugin URI: https://shiprestrict.com
  * Description: Restrict products from shipping to specific US locations. Free: 2 rules & 2 products. Pro: Unlimited restrictions with license key.
- * Version: 1.3.0
+ * Version: 1.3.7
  * Author: UpNorth Media
  * Author URI: https://upnorthmedia.co
  * Text Domain: ship-restrict
@@ -39,7 +39,7 @@ class APSR_Pro {
      *
      * @var string
      */
-    const VERSION = '1.3.0';
+    const VERSION = '1.3.7';
 
     /**
      * Plugin singleton instance
@@ -683,67 +683,221 @@ class APSR_Pro {
         wp_enqueue_script( 'selectWoo' );
         wp_enqueue_style( 'select2' );
 
-        // Add inline CSS for Select2 styling to match WP admin.
-        $custom_css = '
-            /* Hide original select when Select2 is active */
-            select.spsr-select2-states.select2-hidden-accessible {
+        // Output CSS via admin_footer for customizations (admin_head already fired by the time admin_enqueue_scripts runs).
+        add_action( 'admin_footer', array( $this, 'select2_inline_css' ), 5 );
+    }
+
+    /**
+     * Output Select2 CSS directly in admin head.
+     */
+    public function select2_inline_css() {
+        ?>
+        <style id="spsr-select2-css">
+            /* === CRITICAL SELECT2 BASE STYLES (normally from select2.css) === */
+
+            /* Hide the original select */
+            .select2-hidden-accessible {
+                border: 0 !important;
+                clip: rect(0 0 0 0) !important;
+                height: 1px !important;
+                margin: -1px !important;
+                overflow: hidden !important;
+                padding: 0 !important;
                 position: absolute !important;
-                clip: rect(0,0,0,0) !important;
+                width: 1px !important;
             }
-            /* Container sizing */
-            .spsr-select2-states + .select2-container {
-                width: 100% !important;
-                max-width: 400px;
+
+            /* Container base */
+            .select2-container {
+                box-sizing: border-box;
+                display: inline-block;
+                margin: 0;
+                position: relative;
+                vertical-align: middle;
             }
-            /* Selection box styling */
-            .spsr-select2-states + .select2-container .select2-selection--multiple {
-                min-height: 100px;
-                background: #fff;
-                border: 1px solid #8c8f94;
+
+            .select2-container .select2-selection--multiple {
+                box-sizing: border-box;
+                cursor: pointer;
+                display: block;
+                min-height: 32px;
+                user-select: none;
+            }
+
+            .select2-container .select2-selection--multiple .select2-selection__rendered {
+                display: inline;
+                list-style: none;
+                padding: 0;
+                margin: 0;
+            }
+
+            .select2-container .select2-selection--multiple .select2-selection__rendered li {
+                list-style: none;
+                display: inline-block;
+            }
+
+            /* Search field inside selection - WordPress admin overrides */
+            .select2-container .select2-search--inline .select2-search__field,
+            body.wp-admin .select2-container .select2-search--inline input.select2-search__field,
+            body.wp-admin .select2-selection--multiple input.select2-search__field,
+            body.wp-admin .select2-search--inline input[type="text"] {
+                box-sizing: border-box;
+                border: 0 none !important;
+                border-width: 0 !important;
+                font-size: 100%;
+                margin: 0;
+                padding: 0;
+                max-width: 100%;
+                resize: none;
+                height: 26px;
+                vertical-align: bottom;
+                overflow: hidden;
+                background: transparent !important;
+                outline: 0 none !important;
+                box-shadow: none !important;
+                -webkit-box-shadow: none !important;
+            }
+
+            /* Ensure placeholder text has room to display */
+            .select2-container--default .select2-search--inline .select2-search__field {
+                width: auto !important;
+                min-width: 100px !important;
+            }
+
+            /* Let the input expand based on content but ensure placeholder fits */
+            .spsr-select2-container .select2-search--inline {
+                width: auto !important;
+                flex-grow: 1 !important;
+            }
+
+            /* Dropdown positioning - CRITICAL */
+            .select2-dropdown {
+                background-color: #fff;
+                border: 1px solid #aaa;
                 border-radius: 4px;
+                box-sizing: border-box;
+                display: block;
+                position: absolute;
+                left: -100000px;
+                width: 100%;
+                z-index: 100051;
+            }
+
+            .select2-container--open .select2-dropdown {
+                left: 0;
+            }
+
+            .select2-container--open .select2-dropdown--below {
+                border-top: none;
+                border-top-left-radius: 0;
+                border-top-right-radius: 0;
+            }
+
+            .select2-container--open .select2-dropdown--above {
+                border-bottom: none;
+                border-bottom-left-radius: 0;
+                border-bottom-right-radius: 0;
+            }
+
+            /* Results list */
+            .select2-results {
+                display: block;
+            }
+
+            .select2-results__options {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+                max-height: 250px;
+                overflow-y: auto;
+            }
+
+            .select2-results__option {
+                padding: 6px 12px;
+                user-select: none;
+            }
+
+            .select2-results__option--selectable {
+                cursor: pointer;
+            }
+
+            /* Search in dropdown */
+            .select2-search--dropdown {
+                display: block;
                 padding: 4px;
             }
-            .spsr-select2-states + .select2-container .select2-selection--multiple:focus,
-            .spsr-select2-states + .select2-container.select2-container--focus .select2-selection--multiple {
-                border-color: #2271b1;
-                box-shadow: 0 0 0 1px #2271b1;
-                outline: none;
-            }
-            /* Selected tags */
-            .spsr-select2-states + .select2-container .select2-selection__choice {
-                background: #f0f0f1;
-                border: 1px solid #c3c4c7;
-                border-radius: 3px;
-                padding: 2px 6px;
-                margin: 2px;
-            }
-            .spsr-select2-states + .select2-container .select2-selection__choice__remove {
-                color: #50575e;
-                margin-right: 4px;
-            }
-            .spsr-select2-states + .select2-container .select2-selection__choice__remove:hover {
-                color: #d63638;
-            }
-            /* Dropdown styling */
-            .select2-container--default .select2-results__option--highlighted[aria-selected] {
-                background-color: #2271b1;
-            }
-            .select2-dropdown {
-                border-color: #8c8f94;
+
+            .select2-search--dropdown .select2-search__field {
+                padding: 4px;
+                width: 100%;
+                box-sizing: border-box;
+                border: 1px solid #aaa;
                 border-radius: 4px;
             }
-            .select2-search--dropdown .select2-search__field {
+
+            /* Multiple selection tags */
+            .select2-container--default .select2-selection--multiple {
+                background-color: #fff;
                 border: 1px solid #8c8f94;
                 border-radius: 4px;
-                padding: 8px;
+                cursor: text;
+                padding: 5px;
+                min-height: 38px;
             }
-            .select2-search--dropdown .select2-search__field:focus {
+
+            .select2-container--default .select2-selection--multiple .select2-selection__choice {
+                background-color: #f0f0f1;
+                border: 1px solid #c3c4c7;
+                border-radius: 3px;
+                display: inline-block;
+                margin: 2px;
+                padding: 2px 8px;
+            }
+
+            .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+                color: #666;
+                cursor: pointer;
+                display: inline-block;
+                font-weight: bold;
+                margin-right: 4px;
+            }
+
+            .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+                color: #d63638;
+            }
+
+            /* Focus state */
+            .select2-container--default.select2-container--focus .select2-selection--multiple {
                 border-color: #2271b1;
                 box-shadow: 0 0 0 1px #2271b1;
-                outline: none;
+                outline: 0;
             }
-        ';
-        wp_add_inline_style( 'select2', $custom_css );
+
+            /* Highlighted option */
+            .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+                background-color: #2271b1;
+                color: #fff;
+            }
+
+            .select2-container--default .select2-results__option--selected {
+                background-color: #f0f0f1;
+            }
+
+            /* === CUSTOM STYLES === */
+
+            /* Container width */
+            .select2-container.spsr-select2-container {
+                width: 400px !important;
+                max-width: 100% !important;
+            }
+
+            /* Dropdown styling */
+            .spsr-select2-dropdown {
+                border-color: #8c8f94;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            }
+        </style>
+        <?php
     }
 
     /**
@@ -1240,8 +1394,9 @@ class APSR_Pro {
             if ( $.fn.select2 ) {
                 $( '.spsr-select2-states' ).select2({
                     placeholder: '<?php echo esc_js( __( 'Select states...', 'ship-restrict' ) ); ?>',
-                    allowClear: true,
-                    width: '100%'
+                    width: '400px',
+                    containerCssClass: 'spsr-select2-container',
+                    dropdownCssClass: 'spsr-select2-dropdown'
                 });
             }
 
@@ -2409,8 +2564,9 @@ add_action('admin_footer', function() {
                 if ( $.fn.select2 ) {
                     $( '.spsr-select2-states' ).not( '.select2-hidden-accessible' ).select2({
                         placeholder: '<?php echo esc_js( __( 'Select states...', 'ship-restrict' ) ); ?>',
-                        allowClear: true,
-                        width: '100%'
+                        width: '400px',
+                        containerCssClass: 'spsr-select2-container',
+                        dropdownCssClass: 'spsr-select2-dropdown'
                     });
                 }
             }

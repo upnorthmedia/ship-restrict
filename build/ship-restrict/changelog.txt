@@ -1,5 +1,26 @@
 *** Ship Restrict Changelog ***
 
+2026-02-03 - version 1.3.7
+* Fixed - Widths
+
+2026-02-03 - version 1.3.6
+* Tweak - Minor
+
+2026-02-03 - version 1.3.5
+* Changed - Refactored CSS
+
+2026-02-03 - version 1.3.4
+* Dev - Minor
+
+2026-02-03 - version 1.3.3
+* Fixed - Minor issues
+
+2026-02-03 - version 1.3.2
+* Fixed - CSS enqueue bug
+
+2026-02-03 - version 1.3.1
+* Tweak - State selector box
+
 2026-02-03 - version 1.3.0
 * Fixed - State selection box
 
