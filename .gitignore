@@ -1,8 +1,18 @@
 # Development files
 .claude/
 CLAUDE.md
-tests/
 .env
+
+# Composer
+vendor/
+composer.lock
+
+# PHPUnit
+.phpunit.result.cache
+.phpunit.cache/
+phpunit.xml
+
+# Node.js (if using wp-env)
 package.json
 playwright.config.js
 package-lock.json
@@ -20,6 +30,10 @@ playwright/.cache/
 apparc.md
 PLUGIN_OVERVIEW.md
 README_TESTS.md
+TESTING.md
+
+# Testing directories (for build only, keep in repo)
+# tests/ and bin/ are included in repo but excluded from release ZIP
 
 # OS files
 .DS_Store

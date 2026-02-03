@@ -2,9 +2,9 @@
 Contributors: upnorthmedia
 Tags: shipping restrictions, shipping rules, shipping compliance, product restrictions, geo blocking
 Requires at least: 5.6
-Tested up to: 6.8
+Tested up to: 6.9
 Requires PHP: 7.2
-Stable tag: 1.2.5
+Stable tag: 1.2.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
