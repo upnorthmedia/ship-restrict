@@ -3,7 +3,7 @@
  * Plugin Name: Ship Restrict
  * Plugin URI: https://shiprestrict.com
  * Description: Restrict products from shipping to specific US locations. Free: 2 rules & 2 products. Pro: Unlimited restrictions with license key.
- * Version: 1.2.7
+ * Version: 1.2.8
  * Author: UpNorth Media
  * Author URI: https://upnorthmedia.co
  * Text Domain: ship-restrict
@@ -39,7 +39,7 @@ class APSR_Pro {
      *
      * @var string
      */
-    const VERSION = '1.2.7';
+    const VERSION = '1.2.8';
 
     /**
      * Plugin singleton instance
@@ -626,6 +626,7 @@ class APSR_Pro {
         if (is_admin()) {
             add_action('admin_init', array($this, 'admin_init'));
             add_action('admin_menu', array($this, 'admin_menu'));
+            add_action('admin_enqueue_scripts', array($this, 'admin_enqueue_scripts'));
             add_action('woocommerce_product_options_shipping', array($this, 'product_options'));
             add_action('woocommerce_process_product_meta', array($this, 'save_product_options'));
             add_action('woocommerce_product_after_variable_attributes', array($this, 'variation_options'), 10, 3);
@@ -661,6 +662,34 @@ class APSR_Pro {
      * Admin initialization
      */
     public function admin_init() {
+    }
+
+    /**
+     * Enqueue admin scripts and styles
+     *
+     * @param string $hook Current admin page hook.
+     */
+    public function admin_enqueue_scripts( $hook ) {
+        global $post_type;
+
+        $is_settings_page = ( 'woocommerce_page_spsr-settings' === $hook );
+        $is_product_page  = ( ( 'post.php' === $hook || 'post-new.php' === $hook ) && 'product' === $post_type );
+
+        if ( ! $is_settings_page && ! $is_product_page ) {
+            return;
+        }
+
+        // WooCommerce bundles Select2.
+        wp_enqueue_script( 'select2' );
+        wp_enqueue_style( 'select2' );
+
+        // Add inline CSS for Select2 styling.
+        wp_add_inline_style(
+            'select2',
+            '.spsr-select2-states { width: 100% !important; max-width: 400px; }
+            .spsr-select2-states + .select2-container { max-width: 400px; }
+            .spsr-select2-states + .select2-container .select2-selection--multiple { min-height: 120px; }'
+        );
     }
 
     /**
@@ -721,16 +750,22 @@ class APSR_Pro {
                 $notice_type = 'error';
             } else {
             $rule_name = sanitize_text_field(wp_unslash($_POST['spsr_rule_name'] ?? ''));
-            $rule_term = intval($_POST['spsr_rule_term'] ?? 0);
-            
+            $rule_term_input = sanitize_text_field(wp_unslash($_POST['spsr_rule_term'] ?? ''));
+
             // Auto-detect rule type based on selected term
             $rule_type = '';
-            if ($rule_term) {
-                $term = get_term($rule_term);
-                if ($term && !is_wp_error($term)) {
-                    if ($term->taxonomy === 'product_cat') {
+            $rule_term = 0;
+            if ( 'all' === $rule_term_input ) {
+                // "All Products" applies to everything.
+                $rule_type = 'all';
+                $rule_term = 0;
+            } elseif ( is_numeric( $rule_term_input ) && intval( $rule_term_input ) > 0 ) {
+                $rule_term = intval( $rule_term_input );
+                $term = get_term( $rule_term );
+                if ( $term && ! is_wp_error( $term ) ) {
+                    if ( 'product_cat' === $term->taxonomy ) {
                         $rule_type = 'category';
-                    } elseif ($term->taxonomy === 'product_tag') {
+                    } elseif ( 'product_tag' === $term->taxonomy ) {
                         $rule_type = 'tag';
                     }
                 }
@@ -761,7 +796,10 @@ class APSR_Pro {
             $rule_cities = array(); // Keep empty for backward compatibility with existing data
             $rule_zip_codes = array_filter(array_map('trim', explode(',', sanitize_textarea_field(wp_unslash($_POST['spsr_rule_zip_codes'] ?? '')))));
             
-            if ($rule_name && $rule_type && $rule_term) {
+            // Ensure at least one location restriction is provided.
+            $has_location = ! empty( $rule_states ) || ! empty( $rule_state_cities ) || ! empty( $rule_zip_codes );
+
+            if ( $rule_name && $has_location && ( 'all' === $rule_type || ( $rule_type && $rule_term ) ) ) {
                 $rules[] = array(
                     'name' => $rule_name,
                     'type' => $rule_type,
@@ -777,7 +815,11 @@ class APSR_Pro {
                 $notice = __('Rule added successfully.', 'ship-restrict');
                 $notice_type = 'success';
             } else {
-                $notice = __('Failed to add rule. Please fill all required fields.', 'ship-restrict');
+                if ( ! $has_location ) {
+                    $notice = __( 'Failed to add rule. Please select at least one state, city, or ZIP code.', 'ship-restrict' );
+                } else {
+                    $notice = __( 'Failed to add rule. Please fill all required fields.', 'ship-restrict' );
+                }
                 $notice_type = 'error';
             }
             }
@@ -898,6 +940,7 @@ class APSR_Pro {
                         <td>
                             <select name="spsr_rule_term" required>
                                 <option value=""><?php esc_html_e('Select a category or tag...', 'ship-restrict'); ?></option>
+                                <option value="all"><?php esc_html_e('All Products', 'ship-restrict'); ?></option>
                                 <optgroup label="<?php esc_attr_e('Categories', 'ship-restrict'); ?>">
                                     <?php foreach ($categories as $cat) {
                                         echo '<option value="' . esc_attr($cat->term_id) . '">' . esc_html($cat->name) . '</option>';
@@ -929,12 +972,12 @@ class APSR_Pro {
                     <tr valign="top">
                         <th scope="row"><?php echo esc_html__('States', 'ship-restrict'); ?></th>
                         <td>
-                            <select name="spsr_rule_states[]" multiple size="6" class="large-text">
+                            <select name="spsr_rule_states[]" multiple size="6" class="large-text spsr-select2-states">
                                 <?php foreach ($us_states as $code => $label) {
                                     echo '<option value="' . esc_attr($code) . '">' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
                                 } ?>
                             </select>
-                            <p class="description"><?php esc_html_e('Hold Ctrl (Windows) or Command (Mac) to select multiple states.', 'ship-restrict'); ?></p>
+                            <p class="description"><?php esc_html_e('Click to select multiple states. Type to search.', 'ship-restrict'); ?></p>
                         </td>
                     </tr>
                     <tr valign="top">
@@ -1006,7 +1049,10 @@ class APSR_Pro {
                     </thead>
                     <tbody>
                         <?php foreach ($rules as $i => $rule) :
-                            $term = get_term($rule['term_id'], $rule['type'] === 'category' ? 'product_cat' : 'product_tag');
+                            $term = null;
+                            if ( 'all' !== $rule['type'] && ! empty( $rule['term_id'] ) ) {
+                                $term = get_term( $rule['term_id'], 'category' === $rule['type'] ? 'product_cat' : 'product_tag' );
+                            }
                             
                             // Format cities display
                             $cities_display = '';
@@ -1036,8 +1082,16 @@ class APSR_Pro {
                             ?>
                             <tr>
                                 <td><?php echo isset($rule['name']) ? esc_html($rule['name']) : ''; ?></td>
-                                <td><?php echo esc_html(ucfirst($rule['type'])); ?> <small>(<?php echo esc_html($logic_display); ?>)</small></td>
-                                <td><?php echo $term && !is_wp_error($term) ? esc_html($term->name) : esc_html__('(Deleted)', 'ship-restrict'); ?></td>
+                                <td><?php echo 'all' === $rule['type'] ? esc_html__( 'All Products', 'ship-restrict' ) : esc_html( ucfirst( $rule['type'] ) ); ?> <small>(<?php echo esc_html($logic_display); ?>)</small></td>
+                                <td><?php
+                                    if ( 'all' === $rule['type'] ) {
+                                        echo '&mdash;';
+                                    } elseif ( $term && ! is_wp_error( $term ) ) {
+                                        echo esc_html( $term->name );
+                                    } else {
+                                        echo esc_html__( '(Deleted)', 'ship-restrict' );
+                                    }
+                                ?></td>
                                 <td><?php echo esc_html(implode(', ', $rule['states'])); ?></td>
                                 <td><?php echo esc_html($cities_display); ?></td>
                                 <td><?php echo esc_html(implode(', ', $rule['zip_codes'])); ?></td>
@@ -1128,6 +1182,15 @@ class APSR_Pro {
         
         <script type="text/javascript">
         jQuery(document).ready(function($) {
+            // Initialize Select2 for state selector.
+            if ( $.fn.select2 ) {
+                $( '.spsr-select2-states' ).select2({
+                    placeholder: '<?php echo esc_js( __( 'Select states...', 'ship-restrict' ) ); ?>',
+                    allowClear: true,
+                    width: '100%'
+                });
+            }
+
             var cityIndex = 1;
             
             // Add new city pair
@@ -1284,7 +1347,7 @@ class APSR_Pro {
         // State-only restrictions
         echo '<p class="form-field">';
         echo '<label for="_restricted_states">' . esc_html__('Restricted States (entire state)', 'ship-restrict') . '</label>';
-        echo '<select id="_restricted_states" name="_restricted_states[]" multiple size="6" style="width:100%;max-width:400px;">';
+        echo '<select id="_restricted_states" name="_restricted_states[]" multiple size="6" class="spsr-select2-states" style="width:100%;max-width:400px;">';
         foreach ($us_states as $code => $label) {
             $selected = (is_array($selected_states) && in_array($code, $selected_states, true)) ? 'selected' : '';
             echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
@@ -1351,8 +1414,10 @@ class APSR_Pro {
         ?>
         <script type="text/javascript">
         jQuery(document).ready(function($) {
+            // Note: Select2 initialized via admin_footer hook to avoid double-init.
+
             var productCityIndex = <?php echo count($state_cities); ?>;
-            
+
             // Add new city pair for products
             $('#spsr-product-add-city').on('click', function() {
                 var newPair = '<div class="spsr-state-city-pair" style="margin-bottom: 10px;">' +
@@ -1535,7 +1600,7 @@ class APSR_Pro {
         
         // States
         echo '<label for="_restricted_states_' . esc_attr($variation->ID) . '">' . esc_html__('Restricted States (entire state)', 'ship-restrict') . '</label><br />';
-        echo '<select id="_restricted_states_' . esc_attr($variation->ID) . '" name="_restricted_states[' . esc_attr($variation->ID) . '][]" multiple size="6" style="width:100%;max-width:400px;">';
+        echo '<select id="_restricted_states_' . esc_attr($variation->ID) . '" name="_restricted_states[' . esc_attr($variation->ID) . '][]" multiple size="6" class="spsr-select2-states" style="width:100%;max-width:400px;">';
         foreach ($us_states as $code => $label) {
             $selected = in_array($code, $selected_states, true) ? 'selected' : '';
             echo '<option value="' . esc_attr($code) . '" ' . esc_attr($selected) . '>' . esc_html($label) . ' (' . esc_html($code) . ')</option>';
@@ -1840,13 +1905,16 @@ class APSR_Pro {
                         implode(', ', $product_cats), implode(', ', $product_tags)), 'info');
                     
                     foreach ($rules as $rule_index => $rule) {
-                        if (!isset($rule['type'], $rule['term_id'])) {
+                        if ( ! isset( $rule['type'] ) ) {
                             continue;
                         }
                         $match = false;
-                        if ($rule['type'] === 'category' && in_array($rule['term_id'], $product_cats, true)) {
+                        // "All Products" rule matches everything.
+                        if ( 'all' === $rule['type'] ) {
                             $match = true;
-                        } elseif ($rule['type'] === 'tag' && in_array($rule['term_id'], $product_tags, true)) {
+                        } elseif ( isset( $rule['term_id'] ) && 'category' === $rule['type'] && in_array( $rule['term_id'], $product_cats, true ) ) {
+                            $match = true;
+                        } elseif ( isset( $rule['term_id'] ) && 'tag' === $rule['type'] && in_array( $rule['term_id'], $product_tags, true ) ) {
                             $match = true;
                         }
                         if ($match) {
@@ -2282,8 +2350,27 @@ add_action('admin_footer', function() {
         ?>
         <script type="text/javascript">
         jQuery(document).ready(function($) {
+            // Initialize Select2 for variation state selectors.
+            function initVariationSelect2() {
+                if ( $.fn.select2 ) {
+                    $( '.spsr-select2-states' ).not( '.select2-hidden-accessible' ).select2({
+                        placeholder: '<?php echo esc_js( __( 'Select states...', 'ship-restrict' ) ); ?>',
+                        allowClear: true,
+                        width: '100%'
+                    });
+                }
+            }
+
+            // Initialize on page load.
+            initVariationSelect2();
+
+            // Re-initialize when WooCommerce loads variations.
+            $( document ).on( 'woocommerce_variations_loaded woocommerce_variations_added', function() {
+                initVariationSelect2();
+            });
+
             var variationCityIndexes = {};
-            
+
             // Initialize indexes for each variation
             $('.spsr-variation-cities-container').each(function() {
                 var variationId = $(this).data('variation-id');
